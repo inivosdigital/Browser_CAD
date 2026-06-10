@@ -4,7 +4,8 @@
           dim {dtype,p1,p2,p3[,p4]}  dtype: linear-h | linear-v | aligned |
                                             radius | diameter | angular
           hatch {boundary:{kind:'poly',pts}|{kind:'circle',c,r}, pattern, spacing, angle}
-          insert {name, p, scale, rotation}  (block reference) */
+          insert {name, p, scale, rotation}  (block reference)
+          ellipse {c, rx, ry, rot} | leader {pts, text, height} */
 'use strict';
 
 let _entSeq = 1;
@@ -21,6 +22,19 @@ const ENT = {
 
   // Set by the app to look up block definitions: (name) => {name, base, entities}
   blockResolver: null,
+
+  // Parametric point on an ellipse at angle t (relative to its own axes).
+  ellipsePt(e, t) {
+    const co = Math.cos(e.rot || 0), si = Math.sin(e.rot || 0);
+    const x = e.rx * Math.cos(t), y = e.ry * Math.sin(t);
+    return { x: e.c.x + x * co - y * si, y: e.c.y + x * si + y * co };
+  },
+  ellipseSample(e, n) {
+    const pts = [];
+    const N = n || 64;
+    for (let i = 0; i < N; i++) pts.push(ENT.ellipsePt(e, i * 2 * Math.PI / N));
+    return pts;
+  },
 
   // Children of a block reference, transformed into world space.
   resolvedChildren(e) {
@@ -76,6 +90,15 @@ const ENT = {
           out.arcs.push(...pr.arcs);
           out.circles.push(...pr.circles);
         }
+        break;
+      }
+      case 'ellipse': {
+        const pts = ENT.ellipseSample(e);
+        for (let i = 0; i < pts.length; i++) out.segs.push([pts[i], pts[(i + 1) % pts.length]]);
+        break;
+      }
+      case 'leader': {
+        for (let i = 0; i + 1 < e.pts.length; i++) out.segs.push([e.pts[i], e.pts[i + 1]]);
         break;
       }
     }
@@ -135,6 +158,22 @@ const ENT = {
         if (!GEO.bbValid(b)) GEO.bbAddPt(b, e.p);
         break;
       }
+      case 'ellipse': {
+        const co = Math.cos(e.rot || 0), si = Math.sin(e.rot || 0);
+        const hw = Math.hypot(e.rx * co, e.ry * si);
+        const hh = Math.hypot(e.rx * si, e.ry * co);
+        GEO.bbAddPt(b, { x: e.c.x - hw, y: e.c.y - hh });
+        GEO.bbAddPt(b, { x: e.c.x + hw, y: e.c.y + hh });
+        break;
+      }
+      case 'leader': {
+        for (const p of e.pts) GEO.bbAddPt(b, p);
+        const w = (e.text ? e.text.length : 1) * e.height * 0.62;
+        const last = e.pts[e.pts.length - 1];
+        GEO.bbAddPt(b, { x: last.x + w + e.height, y: last.y + e.height });
+        GEO.bbAddPt(b, { x: last.x - w - e.height, y: last.y - e.height });
+        break;
+      }
     }
     return b;
   },
@@ -173,6 +212,17 @@ const ENT = {
       }
       case 'insert':
         return ENT.resolvedChildren(e).some(ch => ENT.hitTest(ch, p, tol));
+      case 'ellipse': {
+        const pr = ENT.prims(e);
+        return pr.segs.some(sg => GEO.distPtSeg(p, sg[0], sg[1]) <= tol);
+      }
+      case 'leader': {
+        for (let i = 0; i + 1 < e.pts.length; i++) {
+          if (GEO.distPtSeg(p, e.pts[i], e.pts[i + 1]) <= tol) return true;
+        }
+        const last = e.pts[e.pts.length - 1];
+        return GEO.dist(p, last) <= Math.max(tol, (e.text ? e.text.length : 1) * e.height * 0.4);
+      }
     }
     return false;
   },
@@ -221,6 +271,13 @@ const ENT = {
       case 'insert':
         push(e.p, 'end');
         for (const ch of ENT.resolvedChildren(e)) out.push(...ENT.snapPoints(ch));
+        break;
+      case 'ellipse':
+        push(e.c, 'center');
+        for (let q = 0; q < 4; q++) push(ENT.ellipsePt(e, q * Math.PI / 2), 'quad');
+        break;
+      case 'leader':
+        for (const p of e.pts) push(p, 'end');
         break;
     }
     return out;
@@ -307,6 +364,16 @@ const ENT = {
         e.scale = (e.scale == null ? 1 : e.scale) * xf.scl;
         e.rotation = xf.ang(e.rotation || 0);
         break;
+      case 'ellipse':
+        e.c = xf.pt(e.c);
+        e.rx *= xf.scl;
+        e.ry *= xf.scl;
+        e.rot = xf.ang(e.rot || 0);
+        break;
+      case 'leader':
+        e.pts = e.pts.map(xf.pt);
+        e.height *= xf.scl;
+        break;
     }
     return e;
   },
@@ -362,8 +429,43 @@ const ENT = {
         break;
       }
       case 'insert': add(e.p, p => { e.p = { ...p }; }); break;
+      case 'ellipse':
+        add(e.c, p => { e.c = { ...p }; });
+        add(ENT.ellipsePt(e, 0), p => { const r = GEO.dist(e.c, p); if (r > 1e-9) e.rx = r; });
+        add(ENT.ellipsePt(e, Math.PI / 2), p => { const r = GEO.dist(e.c, p); if (r > 1e-9) e.ry = r; });
+        break;
+      case 'leader':
+        e.pts.forEach((pt, i) => add(pt, p => { e.pts[i] = { ...p }; }));
+        break;
     }
     return g;
+  },
+
+  /* ---- stretch: move only the defining points inside the crossing rect ---- */
+
+  stretch(e, rect, d) {
+    const mv = (p) => (GEO.ptInRect(p, rect) ? GEO.add(p, d) : p);
+    switch (e.type) {
+      case 'line': e.a = mv(e.a); e.b = mv(e.b); break;
+      case 'circle': case 'arc': e.c = mv(e.c); break;
+      case 'ellipse': e.c = mv(e.c); break;
+      case 'polyline': e.pts = e.pts.map(mv); break;
+      case 'leader': e.pts = e.pts.map(mv); break;
+      case 'point': e.p = mv(e.p); break;
+      case 'text': e.p = mv(e.p); break;
+      case 'insert': e.p = mv(e.p); break;
+      case 'dim':
+        e.p1 = mv(e.p1); e.p2 = mv(e.p2); e.p3 = mv(e.p3);
+        if (e.p4) e.p4 = mv(e.p4);
+        break;
+      case 'hatch': {
+        const b = e.boundary;
+        if (b.kind === 'circle') b.c = mv(b.c);
+        else b.pts = b.pts.map(mv);
+        break;
+      }
+    }
+    return e;
   },
 
   /* ---- selection rectangle test ---- */
@@ -526,6 +628,25 @@ const ENT = {
     return g;
   },
 
+  /* ---- leader geometry: arrow + text placement ---- */
+
+  leaderGeometry(e) {
+    const g = { lines: [], arrows: [], texts: [] };
+    for (let i = 0; i + 1 < e.pts.length; i++) g.lines.push({ a: e.pts[i], b: e.pts[i + 1] });
+    if (e.pts.length >= 2) g.arrows.push({ p: e.pts[0], ang: GEO.ang(e.pts[0], e.pts[1]) });
+    const last = e.pts[e.pts.length - 1];
+    const prev = e.pts.length >= 2 ? e.pts[e.pts.length - 2] : last;
+    const goingRight = last.x >= prev.x - 1e-9;
+    g.texts.push({
+      p: { x: last.x + (goingRight ? 1 : -1) * e.height * 0.5, y: last.y - e.height * 0.35 },
+      text: e.text || '',
+      height: e.height,
+      rotation: 0,
+      align: goingRight ? 'left' : 'right',
+    });
+    return g;
+  },
+
   /* ---- explode: returns array of replacement entities, or null ---- */
 
   explode(e) {
@@ -543,6 +664,21 @@ const ENT = {
         ch.id = nextEntityId();
         return ch;
       });
+    }
+    if (e.type === 'ellipse') {
+      return [makeEntity('polyline', { pts: ENT.ellipseSample(e, 96), closed: true, layer: e.layer, color: e.color })];
+    }
+    if (e.type === 'leader') {
+      const g = ENT.leaderGeometry(e);
+      const out = g.lines.map(l => makeEntity('line', { a: { ...l.a }, b: { ...l.b }, layer: e.layer, color: e.color }));
+      for (const ar of g.arrows) {
+        out.push(makeEntity('line', { a: { ...ar.p }, b: GEO.polar(ar.p, ar.ang + 0.16, ENT.DIM_ARROW), layer: e.layer, color: e.color }));
+        out.push(makeEntity('line', { a: { ...ar.p }, b: GEO.polar(ar.p, ar.ang - 0.16, ENT.DIM_ARROW), layer: e.layer, color: e.color }));
+      }
+      for (const t of g.texts) {
+        if (t.text) out.push(makeEntity('text', { p: t.p, text: t.text, height: t.height, rotation: 0, layer: e.layer, color: e.color }));
+      }
+      return out;
     }
     if (e.type === 'dim') {
       const g = ENT.dimGeometry(e);
@@ -578,6 +714,8 @@ const ENT = {
       case 'dim': return 'Dimension';
       case 'hatch': return `Hatch (${e.pattern})`;
       case 'insert': return `Block "${e.name}"`;
+      case 'ellipse': return 'Ellipse';
+      case 'leader': return 'Leader';
     }
     return e.type;
   },

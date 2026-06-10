@@ -2,6 +2,15 @@
 'use strict';
 
 const RENDER = {
+  // screen-space dash patterns per layer linetype
+  LTYPES: {
+    continuous: [],
+    dashed: [8, 5],
+    hidden: [4, 3],
+    center: [16, 4, 4, 4],
+    dot: [1.5, 4],
+  },
+
   COLORS: {
     bg: '#15191e',
     gridMinor: '#1f262e',
@@ -85,6 +94,25 @@ const RENDER = {
         ctx.stroke();
         for (const ar of g.arrows) RENDER.drawArrow(ctx, vp, ar.p, ar.ang, color);
         for (const t of g.texts) RENDER.drawText(ctx, vp, t.p, t.text, t.height, t.rotation, color, t.align || 'center');
+        break;
+      }
+      case 'ellipse': {
+        const c = vp.w2s(e.c);
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y, e.rx * vp.scale, e.ry * vp.scale, -(e.rot || 0), 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      }
+      case 'leader': {
+        const g = ENT.leaderGeometry(e);
+        ctx.beginPath();
+        for (const l of g.lines) {
+          const a = vp.w2s(l.a), b = vp.w2s(l.b);
+          ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        }
+        ctx.stroke();
+        for (const ar of g.arrows) RENDER.drawArrow(ctx, vp, ar.p, ar.ang, color);
+        for (const t of g.texts) RENDER.drawText(ctx, vp, t.p, t.text, t.height, 0, color, t.align);
         break;
       }
       case 'hatch':
@@ -290,14 +318,17 @@ const RENDER = {
       const bb = ENT.bbox(e);
       if (GEO.bbValid(bb) && !GEO.bbOverlap(bb, viewRect)) continue;
       const sel = doc.selection.has(e.id);
-      const locked = doc.layer(e.layer) && doc.layer(e.layer).locked;
+      const ly = doc.layer(e.layer);
+      const locked = ly && ly.locked;
       let color = doc.entityColor(e);
       if (locked) color = RENDER.fade(color);
       if (sel) {
         RENDER.drawEntity(ctx, vp, e, RENDER.COLORS.selection, 2.0, [6, 4]);
         RENDER.drawGrips(ctx, vp, e);
       } else {
-        RENDER.drawEntity(ctx, vp, e, color, 1.4);
+        const dash = (ly && RENDER.LTYPES[ly.ltype]) || [];
+        const width = 1.4 * (ly && ly.lweight ? ly.lweight : 1);
+        RENDER.drawEntity(ctx, vp, e, color, width, dash);
       }
     }
 

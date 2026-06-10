@@ -33,6 +33,14 @@ const ICONS = {
   hatch: '<rect x="3" y="3" width="14" height="14"/><path d="M3 9 L9 3 M3 15 L15 3 M7 17 L17 7 M13 17 L17 13"/>',
   block: '<path d="M10 2 L17 6 V14 L10 18 L3 14 V6 Z M10 10 L17 6 M10 10 L3 6 M10 10 V18"/>',
   insert: '<path d="M12 4 L17 7 V13 L12 16 L7 13 V7 Z"/><path d="M2 10 H7 M5 8 L7 10 L5 12"/>',
+  ellipse: '<ellipse cx="10" cy="10" rx="8" ry="5"/>',
+  leader: '<path d="M3 17 L10 8 H17 M5.5 16.6 L3 17 L3.6 14.6"/><path d="M12 5 H17" stroke-width="1.1"/>',
+  break: '<path d="M3 10 H8 M12 10 H17 M9 7 L11 13" /><path d="M11 7 L9 13" stroke-width="1.1"/>',
+  join: '<path d="M3 16 L8 10 M12 10 L17 4 M8 10 H12" stroke-dasharray="0"/><circle cx="8" cy="10" r="1.3" fill="currentColor"/><circle cx="12" cy="10" r="1.3" fill="currentColor"/>',
+  stretch: '<path d="M3 4 H11 V16 H3 Z" stroke-dasharray="2.5 2.5"/><path d="M11 10 H18 M15.5 7.5 L18 10 L15.5 12.5"/>',
+  chamfer: '<path d="M3 17 V9 L9 3 H17"/>',
+  dimcontinue: '<path d="M3 4 V12 M10 4 V12 M17 4 V12 M3 8 H17"/><path d="M5 15 H15 M13 13.5 L15 15 L13 16.5"/>',
+  dimbaseline: '<path d="M3 3 V17 M11 5 V11 M17 11 V17 M3 8 H11 M3 14 H17"/>',
 };
 
 function svgIcon(name) {
@@ -57,6 +65,7 @@ const TOOLBAR_GROUPS = [
       { icon: 'arc', label: 'Arc', cmd: 'arc', tip: 'Arc (A)' },
       { icon: 'rectangle', label: 'Rect', cmd: 'rectang', tip: 'Rectangle (REC)' },
       { icon: 'polygon', label: 'Polygon', cmd: 'polygon', tip: 'Polygon (POL)' },
+      { icon: 'ellipse', label: 'Ellipse', cmd: 'ellipse', tip: 'Ellipse (EL)' },
       { icon: 'point', label: 'Point', cmd: 'point', tip: 'Point (PO)' },
       { icon: 'text', label: 'Text', cmd: 'text', tip: 'Text (T)' },
       { icon: 'hatch', label: 'Hatch', cmd: 'hatch', tip: 'Hatch (H)' },
@@ -69,6 +78,9 @@ const TOOLBAR_GROUPS = [
       { icon: 'dimaligned', label: 'Dim Ali', cmd: 'dimaligned', tip: 'Aligned dimension (DAL)' },
       { icon: 'dimradius', label: 'Dim Rad', cmd: 'dimradius', tip: 'Radius dimension (DRA) — diameter: DDI' },
       { icon: 'dimangular', label: 'Dim Ang', cmd: 'dimangular', tip: 'Angular dimension (DAN)' },
+      { icon: 'dimcontinue', label: 'Dim Cont', cmd: 'dimcontinue', tip: 'Continue dimension chain (DCO)' },
+      { icon: 'dimbaseline', label: 'Dim Base', cmd: 'dimbaseline', tip: 'Baseline dimensions (DBA)' },
+      { icon: 'leader', label: 'Leader', cmd: 'leader', tip: 'Leader with text (LE)' },
       { icon: 'dist', label: 'Measure', cmd: 'dist', tip: 'Distance (DI)' },
     ],
   },
@@ -83,8 +95,12 @@ const TOOLBAR_GROUPS = [
       { icon: 'offset', label: 'Offset', cmd: 'offset', tip: 'Offset (O)' },
       { icon: 'trim', label: 'Trim', cmd: 'trim', tip: 'Trim (TR)' },
       { icon: 'extend', label: 'Extend', cmd: 'extend', tip: 'Extend (EX)' },
+      { icon: 'break', label: 'Break', cmd: 'break', tip: 'Break (BR)' },
+      { icon: 'join', label: 'Join', cmd: 'join', tip: 'Join (J)' },
+      { icon: 'stretch', label: 'Stretch', cmd: 'stretch', tip: 'Stretch (S)' },
       { icon: 'array', label: 'Array', cmd: 'array', tip: 'Array (AR)' },
       { icon: 'fillet', label: 'Fillet', cmd: 'fillet', tip: 'Fillet (F)' },
+      { icon: 'chamfer', label: 'Chamfer', cmd: 'chamfer', tip: 'Chamfer (CHA)' },
       { icon: 'explode', label: 'Explode', cmd: 'explode', tip: 'Explode (X)' },
       { icon: 'erase', label: 'Erase', cmd: 'erase', tip: 'Erase (E)' },
     ],
@@ -152,6 +168,9 @@ const UI = {
       fillet: 'fillet', explode: 'explode', erase: 'erase',
       hatch: 'hatch', block: 'block', insert: 'insert',
       dimradius: 'dimradius', dimdiameter: 'dimradius', dimangular: 'dimangular',
+      ellipse: 'ellipse', leader: 'leader', break: 'break', join: 'join',
+      stretch: 'stretch', chamfer: 'chamfer',
+      dimcontinue: 'dimcontinue', dimbaseline: 'dimbaseline', plot: '_select',
     };
     const active = toolToCmd[app.tool ? app.tool.name : 'select'];
     document.querySelectorAll('.tb-btn').forEach(b => {
@@ -291,6 +310,34 @@ const UI = {
         UI.refreshStatus(app);
       });
 
+      const lt = document.createElement('select');
+      lt.className = 'layer-mini';
+      lt.title = 'Linetype';
+      for (const [v, label] of [['continuous', '——'], ['dashed', '– –'], ['hidden', '···–'], ['center', '–·–'], ['dot', '···']]) {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = label;
+        lt.appendChild(o);
+      }
+      lt.value = ly.ltype || 'continuous';
+      lt.addEventListener('change', () => {
+        ly.ltype = lt.value;
+        app.doc._changed();
+      });
+
+      const lw = document.createElement('select');
+      lw.className = 'layer-mini';
+      lw.title = 'Lineweight';
+      for (const v of [1, 1.5, 2, 3]) {
+        const o = document.createElement('option');
+        o.value = String(v); o.textContent = v.toFixed(1);
+        lw.appendChild(o);
+      }
+      lw.value = String(ly.lweight || 1);
+      lw.addEventListener('change', () => {
+        ly.lweight = parseFloat(lw.value);
+        app.doc._changed();
+      });
+
       const del = document.createElement('button');
       del.className = 'icon-btn danger';
       del.title = 'Delete layer (must be empty)';
@@ -304,7 +351,7 @@ const UI = {
         }
       });
 
-      row.append(eye, lock, color, name, del);
+      row.append(eye, lock, color, name, lt, lw, del);
       list.appendChild(row);
     }
   },

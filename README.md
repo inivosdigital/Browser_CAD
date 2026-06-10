@@ -23,17 +23,21 @@ from any plain static host — GitHub Pages included.)
 
 **Drafting**
 - Line, Polyline, Circle (center-radius / 2P), Arc (3-point / center), Rectangle,
-  Polygon, Point, single-line Text
+  Polygon, **Ellipse**, Point, single-line Text
 - Hatching of closed boundaries (diagonal lines, crosshatch, or solid fill)
 - Blocks: define a block from a selection (`BLOCK`/`B`), insert references with
   scale + rotation (`INSERT`/`I`), explode back to geometry
 - Linear (horizontal/vertical), aligned, **radius, diameter, and angular**
-  dimensions with arrowheads and live measured values; `DIST` measuring tool
+  dimensions with arrowheads and live measured values; **Continue (`DCO`) and
+  Baseline (`DBA`) dimension chains**; **Leaders** with text (`LE`);
+  `DIST` measuring tool
 
 **Editing**
 - Move, Copy (repeating), Rotate, Scale, Mirror, Offset (line/circle/arc/polyline),
   Trim (all objects act as cutting edges), **Extend** (to the nearest boundary),
-  Fillet (radius or sharp corner), **Array** (rectangular and polar), Explode, Erase
+  **Break** (incl. split-at-point), **Join** (lines/polylines/arcs → one object),
+  **Stretch** (crossing-window vertex editing), Fillet (radius or sharp corner),
+  **Chamfer** (two distances), **Array** (rectangular and polar), Explode, Erase
 - **Grip editing**: drag the blue grips of any selected entity — endpoints,
   midpoints, centers, quadrants, vertices — with object snaps active
 - Unlimited-ish undo/redo (snapshot based, Ctrl+Z / Ctrl+Y)
@@ -61,14 +65,17 @@ from any plain static host — GitHub Pages included.)
 - Window (drag →, blue) vs crossing (drag ←, green) selection, Shift to deselect
 
 **Organization & files**
-- Layers: color, show/hide, lock, current layer — entity colors default to ByLayer
+- Layers: color, show/hide, lock, **linetype (dashed/hidden/center/dot) and
+  lineweight** per layer — entity colors default to ByLayer
 - Save / open native `.json` drawings (blocks included)
 - **DXF R12 export** (LINE, CIRCLE, ARC, POLYLINE, POINT, TEXT, layer table;
   dimensions/hatches/blocks are exploded for compatibility) — opens in AutoCAD,
   LibreCAD, QCAD…
 - **DXF import** (R12 + LWPOLYLINE, TEXT/MTEXT, layers)
 - **Plot to PDF** (`PLOT`): true vector PDF output — extents or window area,
-  A4/A3/Letter with auto-orientation, white-paper color mapping
+  A4/A3/Letter with auto-orientation, **fixed plot scales** (`1:50`, `1/4` for
+  1/4" = 1'-0"…) or fit-to-paper, layer linetypes/lineweights honored,
+  white-paper color mapping
 - Autosave to `localStorage` — reopen the tab and your drawing is still there
 
 **Viewport**
@@ -125,8 +132,7 @@ round-trip, and a full DXF export→import round-trip.
 
 ## Roadmap ideas
 
-- Break, Stretch, Lengthen; dimension styles; configurable polar increment UI
-- Ellipses, splines, leaders/multileaders
-- More hatch patterns; associative hatches and dimensions
-- Linetypes and lineweights; paper-space layouts with viewports
-- Closed-polyline trim; true mirrored block references (negative scale)
+See [docs/AUTOCAD-LT-PARITY.md](docs/AUTOCAD-LT-PARITY.md) — next up (P2):
+osnap tangent/nearest + object snap tracking, angle override (`<30`), polyline
+arc segments + PEDIT Join, circle 3P, rotate/scale Reference, MTEXT, dimension
+styles, hatch pattern library, command autocomplete, DXF R2000, paper-space layout.

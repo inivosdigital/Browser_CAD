@@ -56,11 +56,28 @@ const DXF = {
     w(0, 'ENDSEC');
 
     w(0, 'SECTION'); w(2, 'TABLES');
+    // linetype definitions for the types we use
+    const LTYPES = {
+      CONTINUOUS: [],
+      DASHED: [0.5, -0.25],
+      HIDDEN: [0.25, -0.125],
+      CENTER: [1.25, -0.25, 0.25, -0.25],
+      DOT: [0, -0.25],
+    };
+    w(0, 'TABLE'); w(2, 'LTYPE'); w(70, Object.keys(LTYPES).length);
+    for (const [lname, pat] of Object.entries(LTYPES)) {
+      w(0, 'LTYPE'); w(2, lname); w(70, 0);
+      w(3, lname.toLowerCase()); w(72, 65);
+      w(73, pat.length);
+      w(40, num(pat.reduce((a, v) => a + Math.abs(v), 0)));
+      for (const seg of pat) w(49, num(seg));
+    }
+    w(0, 'ENDTAB');
     w(0, 'TABLE'); w(2, 'LAYER'); w(70, doc.layers.length);
     for (const ly of doc.layers) {
       w(0, 'LAYER'); w(2, ly.name); w(70, ly.locked ? 4 : 0);
       w(62, (ly.visible ? 1 : -1) * DXF.hexToAci(ly.color));
-      w(6, 'CONTINUOUS');
+      w(6, (ly.ltype || 'continuous').toUpperCase());
     }
     w(0, 'ENDTAB');
     w(0, 'ENDSEC');
@@ -111,7 +128,9 @@ const DXF = {
           w(1, e.text || '');
           if (e.rotation) w(50, deg(e.rotation));
           break;
-        case 'dim': // export dimensions exploded for maximum compatibility
+        case 'dim': // exploded for maximum compatibility
+        case 'leader':
+        case 'ellipse':
           for (const part of (ENT.explode(e) || [])) writeEnt(part);
           break;
       }
@@ -151,7 +170,7 @@ const DXF = {
       if (code === 0 && val === 'ENDSEC') { section = ''; i++; continue; }
 
       if (section === 'TABLES' && code === 0 && val === 'LAYER') {
-        const ly = { name: null, color: '#ffffff', visible: true, locked: false };
+        const ly = { name: null, color: '#ffffff', visible: true, locked: false, ltype: 'continuous', lweight: 1 };
         i++;
         while (i < pairs.length && pairs[i][0] !== 0) {
           const [c, v] = pairs[i];
@@ -161,6 +180,10 @@ const DXF = {
             ly.visible = n >= 0;
             ly.color = DXF.aciToHex(Math.abs(n));
           } else if (c === 70) ly.locked = !!(parseInt(v, 10) & 4);
+          else if (c === 6) {
+            const lt = v.toLowerCase();
+            if (['dashed', 'hidden', 'center', 'dot'].includes(lt)) ly.ltype = lt;
+          }
           i++;
         }
         if (ly.name && !layers.some(l => l.name === ly.name)) layers.push(ly);

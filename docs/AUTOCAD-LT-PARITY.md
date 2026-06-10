@@ -17,7 +17,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Arc | 11 entry methods | 🟡 3-point, center-start-end | OK for MVP |
 | Rectangle | corner-corner + **dimensions, rotation, fillet/chamfer corners** | 🟡 corner-corner | P3 |
 | Polygon | inscribed/circumscribed/edge | 🟡 inscribed | P3 |
-| Ellipse / elliptical arc | center or axis-end | ❌ | **P1** |
+| Ellipse / elliptical arc | center or axis-end | ✅ ellipse (`EL`) | arcs P3 |
 | Spline | fit-point smooth curves | ❌ | P2 |
 | Point + point styles (DDPTYPE) | ✅ basic | 🟡 | P3 |
 | Construction line (XLINE) / Ray | infinite reference lines | ❌ | P2 |
@@ -34,11 +34,11 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Mirror (MIRRTEXT) | ✅ | ✅ | — |
 | Offset (+Through, Erase, Layer opts) | ✅ | ✅ basic | — |
 | Trim / Extend (select edges or all; shift-swap) | ✅ | ✅ all-edges mode | P2 shift-swap |
-| Fillet (+polyline mode) / Chamfer | ✅ | 🟡 fillet lines only | **P1 chamfer**, P2 arcs/plines |
+| Fillet (+polyline mode) / Chamfer | ✅ | ✅ fillet + chamfer (`CHA`) for lines | P2 arcs/plines |
 | Array: rectangular, polar, **path**; associative | ✅ | 🟡 rect + polar, non-assoc. | OK for MVP |
-| Break / Break at point | ✅ | ❌ | **P1** |
-| Join (lines→pline, arcs→arc/circle) | ✅ | ❌ | **P1** |
-| Stretch (crossing-window vertex move) | ✅ | ❌ | **P1** |
+| Break / Break at point | ✅ | ✅ `BR` (incl. `@` split-at-point) | — |
+| Join (lines→pline, arcs→arc/circle) | ✅ | ✅ `J` | — |
+| Stretch (crossing-window vertex move) | ✅ | ✅ `S` | — |
 | Lengthen | delta/percent/total | ❌ | P3 |
 | Explode | ✅ | ✅ | — |
 | PEDIT (join, close, vertex edit, width) | ✅ | 🟡 closed flag + grips | P2 join |
@@ -53,11 +53,11 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Multiline text (MTEXT) w/ formatting | ✅ | ❌ | P2 (basic word-wrap box) |
 | Dim: linear, aligned, radius, diameter, angular | ✅ | ✅ | — |
 | Dim: arc length, ordinate, jogged | ✅ | ❌ | P3 |
-| Continue / Baseline dimensioning (DIMCONT/DIMBASE) | ✅ | ❌ | **P1** |
+| Continue / Baseline dimensioning (DIMCONT/DIMBASE) | ✅ | ✅ `DCO` / `DBA` | — |
 | Quick dimension (QDIM) | ✅ | ❌ | P3 |
 | **Dimension styles** (DIMSTYLE: arrows, text height, units, precision) | ✅ | 🟡 fixed style; units global toggle | P2 (per-doc style settings) |
 | **Imperial/architectural dim display X'-Y"** | via DIMSTYLE units | ✅ **default** | done |
-| Leaders / Multileaders (MLEADER) | ✅ | ❌ | **P1** (simple leader: arrow + segments + text) |
+| Leaders / Multileaders (MLEADER) | ✅ | ✅ simple leader (`LE`) | mleader styles P3 |
 | Tables | ✅ | ❌ | — |
 | Annotative scaling | ✅ | ❌ | — |
 | Centerlines / center marks | ✅ | ❌ | P3 |
@@ -83,7 +83,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 
 | Feature | LT behavior | BrowserCAD | Priority |
 |---|---|---|---|
-| Layers: on/off, freeze, lock, color, linetype, lineweight, plot flag | ✅ | 🟡 visible/lock/color | **P1 linetype + lineweight** |
+| Layers: on/off, freeze, lock, color, linetype, lineweight, plot flag | ✅ | ✅ visible/lock/color/linetype/lineweight | freeze P3 |
 | Layer states, filters | ✅ | ❌ | — |
 | Blocks: define, insert, redefine | ✅ | ✅ | — |
 | Block attributes (ATTDEF), Smart Blocks | ✅ | ❌ | P3 |
@@ -99,7 +99,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Hatch patterns (ANSI/ISO library), solid, **gradient** | ✅ | 🟡 lines/cross/solid | P2 more patterns (ANSI31-38 style) |
 | Pick internal point (boundary detection) | ✅ | ❌ (pick object only) | P2 |
 | Associative hatch, hatch editing | ✅ | ❌ | P3 |
-| Hatch scale + angle per instance | ✅ | 🟡 spacing only | **P1 angle prompt** |
+| Hatch scale + angle per instance | ✅ | ✅ spacing + angle | — |
 
 ## 7. Views, Layouts & Output
 
@@ -109,7 +109,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Named views | ✅ | ❌ | — |
 | **Paper-space layouts + viewports, viewport scale** | ✅ | ❌ | P2 (single layout, scaled viewport, title block) |
 | Plot to printer/**PDF**, plot styles (CTB), lineweights | ✅ | 🟡 vector PDF, no styles | P2 lineweight in plot |
-| Plot scale (1/4" = 1'-0" etc.) | ✅ | 🟡 fit-to-paper only | **P1 fixed scales** |
+| Plot scale (1/4" = 1'-0" etc.) | ✅ | ✅ Fit, 1:n, x/y"=1'-0" | — |
 | Page setups | ✅ | ❌ | P3 |
 
 ## 8. Files & Interop
@@ -136,9 +136,9 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 
 ## MVP implementation order (the agreed plan)
 
-1. **P1 batch — "daily drafting parity"**: Ellipse · Break · Join · Stretch ·
-   Chamfer · Continue/Baseline dimensioning · simple Leader · hatch angle prompt ·
-   layer linetype (dashed/center/hidden) + lineweight · fixed plot scales
+1. ~~**P1 batch — "daily drafting parity"**~~ ✅ **shipped**: Ellipse · Break · Join ·
+   Stretch · Chamfer · Continue/Baseline dimensioning · simple Leader · hatch angle ·
+   layer linetypes (dashed/hidden/center/dot) + lineweights · fixed plot scales
 2. **P2 batch — "feel like LT"**: osnap tangent/nearest + object snap tracking ·
    angle override `<30` · polyline arc segments + PEDIT Join · circle 3P ·
    rotate/scale Reference · MTEXT basics · dimension style settings panel ·

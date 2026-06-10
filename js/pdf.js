@@ -12,15 +12,25 @@ const PDF = {
   },
   MARGIN: 28, // pt
 
-  /* Generate a PDF (string of bytes <= 0x7F) plotting `rect` of the document. */
-  generate(doc, rect, paper) {
+  // dash patterns (pt) per layer linetype
+  LTYPES: {
+    continuous: [],
+    dashed: [6, 3],
+    hidden: [3, 2],
+    center: [12, 3, 3, 3],
+    dot: [0.5, 3],
+  },
+
+  /* Generate a PDF (string of bytes <= 0x7F) plotting `rect` of the document.
+     fixedScale: paper-inches per drawing-inch (e.g. 1/48 for 1/4" = 1'-0"), or null = fit. */
+  generate(doc, rect, paper, fixedScale) {
     let [pw, ph] = PDF.PAPER[paper] || PDF.PAPER.a4;
     const bw = Math.max(rect.x2 - rect.x1, 1e-9);
     const bh = Math.max(rect.y2 - rect.y1, 1e-9);
     if ((bw > bh) !== (pw > ph)) { const t = pw; pw = ph; ph = t; } // auto-orient
 
     const m = PDF.MARGIN;
-    const scale = Math.min((pw - 2 * m) / bw, (ph - 2 * m) / bh);
+    const scale = fixedScale ? fixedScale * 72 : Math.min((pw - 2 * m) / bw, (ph - 2 * m) / bh);
     const ox = (pw - bw * scale) / 2 - rect.x1 * scale;
     const oy = (ph - bh * scale) / 2 - rect.y1 * scale;
     const X = (x) => +(x * scale + ox).toFixed(2);
@@ -107,7 +117,11 @@ const PDF = {
 
     const drawEntity = (e, inkOverride) => {
       const ink = inkOverride || color(PDF._entityColor(doc, e));
+      const ly = doc.layer(e.layer);
+      const dash = (ly && PDF.LTYPES[ly.ltype]) || [];
+      const lw = 0.6 * (ly && ly.lweight ? ly.lweight : 1);
       w(`${ink} RG ${ink} rg`);
+      w(`${lw.toFixed(2)} w [${dash.join(' ')}] 0 d`);
       switch (e.type) {
         case 'line': seg(e.a, e.b); w('S'); break;
         case 'circle': arcPath(e.c, e.r, 0, Math.PI * 2, true); w('h S'); break;
@@ -172,6 +186,21 @@ const PDF = {
             w('S Q');
             boundaryPath(); w('S');
           }
+          break;
+        }
+        case 'ellipse': {
+          const pts = ENT.ellipseSample(e, 96);
+          moveTo(pts[0]);
+          for (let i = 1; i < pts.length; i++) lineTo(pts[i]);
+          w('h S');
+          break;
+        }
+        case 'leader': {
+          const g = ENT.leaderGeometry(e);
+          for (const l of g.lines) seg(l.a, l.b);
+          w('S');
+          for (const ar of g.arrows) arrow(ar.p, ar.ang);
+          for (const t of g.texts) text(t.p, t.text, t.height, 0, t.align);
           break;
         }
         case 'insert':
