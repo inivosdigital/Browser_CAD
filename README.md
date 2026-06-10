@@ -43,10 +43,17 @@ from any plain static host — GitHub Pages included.)
 - Command line with command names *and* classic aliases: `L`, `PL`, `C`, `A`, `REC`,
   `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`, `F`, `X`, `E`, `DLI`, `DAL`, `DI`, `Z` …
 - Coordinate entry: `10,20` absolute · `@10,20` relative · `@15<45` polar ·
-  bare number = direct distance toward the cursor
+  bare length = direct distance toward the cursor
+- **Architectural lengths everywhere** (1 unit = 1"): type `3'6`, `3'-6 1/2"`,
+  `18"`, `6 1/2` for any distance, radius, offset, spacing, or coordinate;
+  `UNITS` toggles feet-inches display for dimensions and the coordinate readout
+- **Polar tracking** (F10): the cursor locks onto 45° increment rays with a
+  dashed tracking line and a live `distance<angle` readout — aim, type `3'6`,
+  Enter, exactly like AutoCAD direct distance entry
 - Object snaps with glyph markers: endpoint □, midpoint △, center ○, quadrant ◇,
   intersection ✕, perpendicular ⊾ (F3)
-- Ortho mode (F8), grid + grid snap (F7/F9), crosshair cursor with pickbox
+- Ortho mode (F8, mutually exclusive with polar), grid + grid snap (F7/F9),
+  crosshair cursor with pickbox
 - Right-click = Enter; Enter on an empty command line repeats the last command
 - Window (drag →, blue) vs crossing (drag ←, green) selection, Shift to deselect
 
@@ -81,6 +88,7 @@ Press **F1** in the app for the full command reference.
 index.html          shell + script load order
 css/style.css       dark workbench theme
 js/geometry.js      vector math, intersections, arcs, bboxes   (headless)
+js/units.js         length parsing/formatting incl. feet-inches (headless)
 js/entities.js      entity model: hit-test, snap, transform,
                     dimension geometry, explode                (headless)
 js/document.js      entities + layers + selection + undo/redo  (headless)
@@ -111,7 +119,7 @@ round-trip, and a full DXF export→import round-trip.
 
 ## Roadmap ideas
 
-- Break, Stretch, Lengthen; polar tracking; dimension styles
+- Break, Stretch, Lengthen; dimension styles; configurable polar increment UI
 - Ellipses, splines, leaders/multileaders
 - More hatch patterns; associative hatches and dimensions
 - Linetypes and lineweights; paper-space layouts with viewports

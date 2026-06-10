@@ -422,10 +422,20 @@ const ENT = {
     return GEO.sweep(a0, a1);
   },
 
-  formatDim(v) {
-    let s = v.toFixed(2);
+  // display units for dimension text: 'decimal' | 'architectural' (synced from doc settings)
+  units: 'decimal',
+
+  formatNum(v) {
+    let s = (+v).toFixed(2);
     if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
     return s;
+  },
+
+  formatDim(v) {
+    if (ENT.units === 'architectural' && typeof UNITS !== 'undefined') {
+      return UNITS.formatLength(v, 'architectural');
+    }
+    return ENT.formatNum(v);
   },
 
   // -> { lines:[{a,b}], arcs:[{c,r,a0,a1}], texts:[{p,text,height,rotation}], arrows:[{p,ang}] }
@@ -469,7 +479,7 @@ const ENT = {
       const amid = a0 + GEO.sweep(a0, a1) / 2;
       g.texts.push({
         p: GEO.polar(e.p1, amid, r + ENT.DIM_TEXT * 1.2),
-        text: ENT.formatDim(ENT.dimValue(e)) + '°',
+        text: ENT.formatNum(ENT.dimValue(e)) + '°', // angles are always decimal degrees
         height: ENT.DIM_TEXT,
         rotation: 0,
         align: 'center',

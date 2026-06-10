@@ -318,6 +318,33 @@ const RENDER = {
       ctx.setLineDash([]);
     }
 
+    // polar tracking ray + distance<angle readout
+    if (app.pointer.track) {
+      const t = app.pointer.track;
+      const b = vp.w2s(t.base);
+      const dir = { x: Math.cos(-t.ang), y: Math.sin(-t.ang) }; // world->canvas angle flip
+      const far = Math.hypot(vp.w, vp.h);
+      ctx.strokeStyle = 'rgba(53,224,122,0.55)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 5]);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x + dir.x * far, b.y + dir.y * far);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const s = app.pointer.screen;
+      const units = app.doc.settings.units;
+      const distTxt = (typeof UNITS !== 'undefined') ? UNITS.formatLength(t.dist, units, 2) : t.dist.toFixed(2);
+      const angDeg = GEO.normAng(t.ang) * 180 / Math.PI;
+      const label = `${distTxt} < ${(+angDeg.toFixed(2))}°`;
+      ctx.font = '11px Consolas, monospace';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(20,28,24,0.85)';
+      ctx.fillRect(s.x + 14, s.y - 26, tw + 10, 17);
+      ctx.fillStyle = RENDER.COLORS.snap;
+      ctx.fillText(label, s.x + 19, s.y - 14);
+    }
+
     // snap marker
     if (app.pointer.snap) RENDER.drawSnapMarker(ctx, vp, app.pointer.snap);
 

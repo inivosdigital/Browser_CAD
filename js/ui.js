@@ -200,6 +200,7 @@ const UI = {
     bind('tog-grid', 'grid');
     bind('tog-snap', 'snap');
     bind('tog-ortho', 'ortho');
+    bind('tog-polar', 'polar');
     bind('tog-osnap', 'osnap');
   },
 
@@ -209,6 +210,7 @@ const UI = {
     set('tog-grid', s.grid);
     set('tog-snap', s.snapGrid);
     set('tog-ortho', s.ortho);
+    set('tog-polar', s.polar);
     set('tog-osnap', s.osnap);
     document.getElementById('zoom-level').textContent = `${(app.vp.scale * 100 / 4).toFixed(0)}%`;
     document.getElementById('cur-layer').textContent = app.doc.currentLayer;
@@ -220,7 +222,9 @@ const UI = {
 
   updateCoords(app) {
     const p = app.pointer.snapped;
-    document.getElementById('coords').textContent = `${p.x.toFixed(4)}, ${p.y.toFixed(4)}`;
+    const arch = app.doc.settings.units === 'architectural';
+    const f = (v) => (arch ? UNITS.formatLength(v, 'architectural') : v.toFixed(4));
+    document.getElementById('coords').textContent = `${f(p.x)}, ${f(p.y)}`;
   },
 
   /* ---- layers panel ---- */
@@ -478,8 +482,10 @@ const UI = {
       ['Shift + click', 'Remove from selection'],
       ['Esc', 'Cancel command / clear selection'],
       ['Enter (empty)', 'Repeat last command'],
-      ['Coordinates', '10,20 absolute · @10,20 relative · @15&lt;45 polar · bare number = distance along cursor'],
-      ['F1', 'Help'], ['F3', 'Object snap'], ['F7', 'Grid'], ['F8', 'Ortho'], ['F9', 'Grid snap'],
+      ['Coordinates', '10,20 absolute · @10,20 relative · @15&lt;45 polar · bare length = distance along cursor'],
+      ['Lengths', "decimal or feet-inches: 42 · 3'6 · 3'-6 1/2\" · 18\" · 6 1/2 (1 unit = 1\")"],
+      ['Polar tracking', 'F10 — locks the cursor to 45° increments with a distance&lt;angle readout'],
+      ['F1', 'Help'], ['F3', 'Object snap'], ['F7', 'Grid'], ['F8', 'Ortho'], ['F9', 'Grid snap'], ['F10', 'Polar tracking'],
       ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+A', 'Select all'], ['Ctrl+S', 'Save'], ['Delete', 'Erase selection'],
     ];
     for (const [k, v] of rows) html += `<tr><td>${k}</td><td colspan="2">${v}</td></tr>`;

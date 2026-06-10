@@ -93,23 +93,29 @@ const app = {
 
   /* ---------- coordinate input ---------- */
 
+  // Lengths accept architectural input everywhere: 42 · 3'6 · 3'-6 1/2" · 18" · 1/2
   parseCoord(raw) {
     const rel = raw.startsWith('@');
     const body = rel ? raw.slice(1) : raw;
     const base = rel ? (app.lastPoint || app.anchor || { x: 0, y: 0 }) : { x: 0, y: 0 };
-    let m = /^(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)$/.exec(body);
-    if (m) {
-      const p = { x: parseFloat(m[1]), y: parseFloat(m[2]) };
-      return rel ? GEO.add(base, p) : p;
+    const comma = body.indexOf(',');
+    if (comma >= 0) {
+      const x = UNITS.parseLength(body.slice(0, comma));
+      const y = UNITS.parseLength(body.slice(comma + 1));
+      if (x === null || y === null) return null;
+      return rel ? GEO.add(base, { x, y }) : { x, y };
     }
-    m = /^(-?\d*\.?\d+)\s*<\s*(-?\d*\.?\d+)$/.exec(body);
-    if (m) {
-      return GEO.polar(base, parseFloat(m[2]) * Math.PI / 180, parseFloat(m[1]));
+    const lt = body.indexOf('<');
+    if (lt >= 0) {
+      const d = UNITS.parseLength(body.slice(0, lt));
+      const a = parseFloat(body.slice(lt + 1));
+      if (d === null || Number.isNaN(a)) return null;
+      return GEO.polar(base, a * Math.PI / 180, d);
     }
-    // bare number = direct distance entry toward the cursor
-    m = /^(-?\d*\.?\d+)$/.exec(body);
-    if (m && !rel && app.anchor) {
-      const d = parseFloat(m[1]);
+    // bare length = direct distance entry toward the cursor (polar/ortho applied)
+    if (!rel && app.anchor) {
+      const d = UNITS.parseLength(body);
+      if (d === null) return null;
       const dir = GEO.sub(app.pointer.snapped, app.anchor);
       if (GEO.len(dir) < 1e-9) return null;
       return GEO.add(app.anchor, GEO.mul(GEO.norm(dir), d));
@@ -163,8 +169,29 @@ const app = {
     app.pointer.snap = snap;
 
     let eff = snap ? { ...snap.pt } : { ...app.pointer.raw };
-    if (!snap && isPointTool && app.doc.settings.snapGrid) eff = SNAP.gridSnap(app.doc, eff);
-    if (!snap && isPointTool && app.doc.settings.ortho && app.anchor) eff = SNAP.ortho(app.anchor, eff);
+    app.pointer.track = null;
+    if (!snap && isPointTool) {
+      const s = app.doc.settings;
+      if (s.snapGrid) eff = SNAP.gridSnap(app.doc, eff);
+      if (s.ortho && app.anchor) {
+        eff = SNAP.ortho(app.anchor, eff);
+      } else if (s.polar && app.anchor) {
+        // polar tracking: lock to angle increments when the cursor is near a tracking ray
+        const d = GEO.sub(app.pointer.raw, app.anchor);
+        const dist = GEO.len(d);
+        if (dist > app.vp.pxToWorld(4)) {
+          const inc = (s.polarInc || 45) * Math.PI / 180;
+          const ang = Math.atan2(d.y, d.x);
+          const locked = Math.round(ang / inc) * inc;
+          let diff = Math.abs(ang - locked);
+          if (diff > Math.PI) diff = Math.PI * 2 - diff;
+          if (diff < 6 * Math.PI / 180) {
+            eff = GEO.polar(app.anchor, locked, dist);
+            app.pointer.track = { base: app.anchor, ang: locked, dist };
+          }
+        }
+      }
+    }
     app.pointer.snapped = eff;
     UI.updateCoords(app);
   },
@@ -270,10 +297,12 @@ function initApp() {
   app.doc = new CadDocument();
   app.vp = new Viewport();
   ENT.blockResolver = (name) => app.doc.blocks[name];
+  ENT.units = app.doc.settings.units || 'decimal';
   app.canvas = document.getElementById('canvas');
   app.ctx = app.canvas.getContext('2d');
 
   app.doc.onChange = () => {
+    ENT.units = app.doc.settings.units || 'decimal';
     app.requestRender();
     UI.refreshProps(app);
     UI.setDocTitle(app.docName, app.doc.modified);
@@ -424,6 +453,7 @@ function initApp() {
     if (key === 'F7') { ev.preventDefault(); app.execCommand('grid'); return; }
     if (key === 'F8') { ev.preventDefault(); app.execCommand('ortho'); return; }
     if (key === 'F9') { ev.preventDefault(); app.execCommand('snap'); return; }
+    if (key === 'F10') { ev.preventDefault(); app.execCommand('polar'); return; }
 
     if (mod && key.toLowerCase() === 'z' && !ev.shiftKey) { ev.preventDefault(); app.execCommand('undo'); return; }
     if (mod && (key.toLowerCase() === 'y' || (key.toLowerCase() === 'z' && ev.shiftKey))) { ev.preventDefault(); app.execCommand('redo'); return; }

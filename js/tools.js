@@ -11,6 +11,9 @@ const fmt = (n) => {
   return s === '-0' ? '0' : s;
 };
 const degOf = (rad) => GEO.normAng(rad) * 180 / Math.PI;
+// distance input: accepts decimal and architectural (3'6, 18", 6 1/2) forms
+const parseDist = (raw) => (typeof UNITS !== 'undefined' ? UNITS.parseLength(raw) : (Number.isNaN(parseFloat(raw)) ? null : parseFloat(raw)));
+const fmtLen = (v) => (typeof UNITS !== 'undefined' && ENT.units === 'architectural' ? UNITS.formatLength(v, 'architectural') : fmt(v));
 
 /* ================= selection helpers ================= */
 
@@ -490,8 +493,8 @@ TOOLS.circle = () => ({
       return true;
     }
     if (this.stage === 'radius') {
-      const n = parseFloat(raw);
-      if (!Number.isNaN(n)) { this._make(app, this.c, n); return true; }
+      const n = parseDist(raw);
+      if (n !== null) { this._make(app, this.c, n); return true; }
     }
     if (u === '') { app.endTool(); return true; }
     return false;
@@ -630,8 +633,8 @@ TOOLS.polygon = () => ({
       return true;
     }
     if (this.stage === 'vertex') {
-      const r = parseFloat(raw);
-      if (!Number.isNaN(r)) { this._make(app, r, Math.PI / 2); return true; }
+      const r = parseDist(raw);
+      if (r !== null) { this._make(app, r, Math.PI / 2); return true; }
     }
     if (raw === '') { app.endTool(); return true; }
     return false;
@@ -673,8 +676,8 @@ TOOLS.text = () => ({
   },
   input(app, raw) {
     if (this.stage === 'height') {
-      const h = raw === '' ? app.doc.settings.textHeight : parseFloat(raw);
-      if (Number.isNaN(h) || h <= 0) { app.print('Invalid height.'); return true; }
+      const h = raw === '' ? app.doc.settings.textHeight : parseDist(raw);
+      if (h === null || Number.isNaN(h) || h <= 0) { app.print('Invalid height.'); return true; }
       this.height = h;
       app.doc.settings.textHeight = h;
       this.stage = 'text';
@@ -753,7 +756,7 @@ TOOLS.dist = () => ({
       app.prompt('Specify second point:');
     } else {
       const d = GEO.dist(this.p1, pt);
-      app.print(`Distance = ${fmt(d)},  ΔX = ${fmt(pt.x - this.p1.x)},  ΔY = ${fmt(pt.y - this.p1.y)},  Angle = ${fmt(degOf(GEO.ang(this.p1, pt)))}°`);
+      app.print(`Distance = ${fmtLen(d)},  ΔX = ${fmtLen(pt.x - this.p1.x)},  ΔY = ${fmtLen(pt.y - this.p1.y)},  Angle = ${fmt(degOf(GEO.ang(this.p1, pt)))}°`);
       app.endTool();
     }
   },
@@ -1006,8 +1009,8 @@ TOOLS.offset = () => ({
   input(app, raw) {
     if (this.stage === 'dist') {
       if (raw !== '') {
-        const n = parseFloat(raw);
-        if (Number.isNaN(n) || n <= 0) { app.print('Distance must be a positive number.'); return true; }
+        const n = parseDist(raw);
+        if (n === null || n <= 0) { app.print('Distance must be a positive number.'); return true; }
         this.d = n;
         app.doc.settings.offsetDist = n;
       }
@@ -1070,8 +1073,8 @@ TOOLS.fillet = () => ({
     }
     if (this.stage === 'radius') {
       if (raw !== '') {
-        const n = parseFloat(raw);
-        if (Number.isNaN(n) || n < 0) { app.print('Radius must be >= 0.'); return true; }
+        const n = parseDist(raw);
+        if (n === null || n < 0) { app.print('Radius must be >= 0.'); return true; }
         app.doc.settings.filletRadius = n;
       }
       this.stage = 'first';
@@ -1273,14 +1276,14 @@ TOOLS.array = () => ({
         return true;
       }
       case 'rsp': {
-        const n = this._num(raw, 10);
-        if (n === null) { app.print('Enter a number.'); return true; }
+        const n = raw === '' ? 10 : parseDist(raw);
+        if (n === null) { app.print('Enter a distance.'); return true; }
         this.rsp = n; this.stage = 'csp'; app.prompt('Distance between columns <10>:');
         return true;
       }
       case 'csp': {
-        const n = this._num(raw, 10);
-        if (n === null) { app.print('Enter a number.'); return true; }
+        const n = raw === '' ? 10 : parseDist(raw);
+        if (n === null) { app.print('Enter a distance.'); return true; }
         this.csp = n;
         this._applyRect(app);
         return true;
@@ -1372,8 +1375,8 @@ TOOLS.hatch = () => ({
     }
     if (this.stage === 'spacing') {
       if (raw !== '') {
-        const n = parseFloat(raw);
-        if (Number.isNaN(n) || n <= 0) { app.print('Enter a positive number.'); return true; }
+        const n = parseDist(raw);
+        if (n === null || n <= 0) { app.print('Enter a positive number.'); return true; }
         this.spacing = n;
       }
       this._make(app);
@@ -1693,7 +1696,33 @@ const COMMANDS = {
   // toggles
   grid: { fn: (app) => { app.doc.settings.grid = !app.doc.settings.grid; app.refreshStatus(); }, help: 'Toggle grid (F7)' },
   snap: { fn: (app) => { app.doc.settings.snapGrid = !app.doc.settings.snapGrid; app.refreshStatus(); }, help: 'Toggle grid snap (F9)' },
-  ortho: { fn: (app) => { app.doc.settings.ortho = !app.doc.settings.ortho; app.refreshStatus(); }, help: 'Toggle ortho (F8)' },
+  ortho: {
+    fn: (app) => {
+      app.doc.settings.ortho = !app.doc.settings.ortho;
+      if (app.doc.settings.ortho) app.doc.settings.polar = false;
+      app.refreshStatus();
+    }, help: 'Toggle ortho (F8)',
+  },
+  polar: {
+    fn: (app) => {
+      app.doc.settings.polar = !app.doc.settings.polar;
+      if (app.doc.settings.polar) app.doc.settings.ortho = false;
+      app.print(`Polar tracking ${app.doc.settings.polar ? 'on' : 'off'} (increment ${app.doc.settings.polarInc || 45}°).`);
+      app.refreshStatus();
+    }, help: 'Toggle polar tracking (F10)',
+  },
+  units: {
+    fn: (app) => {
+      const arch = app.doc.settings.units !== 'architectural';
+      app.doc.settings.units = arch ? 'architectural' : 'decimal';
+      ENT.units = app.doc.settings.units;
+      app.print(arch
+        ? "Units: architectural (1 unit = 1\"; lengths accept 3'6, 18\", 6 1/2)."
+        : 'Units: decimal.');
+      app.refreshStatus();
+      app.requestRender();
+    }, help: 'Toggle decimal / architectural (feet-inches) units',
+  },
   osnap: { fn: (app) => { app.doc.settings.osnap = !app.doc.settings.osnap; app.refreshStatus(); }, help: 'Toggle object snap (F3)' },
   // file
   new: { fn: (app) => app.fileNew(), help: 'New drawing' },
@@ -1714,7 +1743,7 @@ const ALIASES = {
   tr: 'trim', ex: 'extend', ar: 'array', f: 'fillet', x: 'explode', e: 'erase', del: 'erase', delete: 'erase',
   h: 'hatch', bh: 'hatch', b: 'block', i: 'insert',
   p: 'pan', z: 'zoom', ze: 'zoom', re: 'regen', u: 'undo', la: 'layer',
-  print: 'plot', pdf: 'plot',
+  print: 'plot', pdf: 'plot', un: 'units',
   '?': 'help', os: 'osnap', or: 'ortho',
 };
 
