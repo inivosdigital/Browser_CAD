@@ -115,6 +115,15 @@ const RENDER = {
         for (const t of g.texts) RENDER.drawText(ctx, vp, t.p, t.text, t.height, 0, color, t.align);
         break;
       }
+      case 'mtext': {
+        const lines = ENT.mtextLines(e);
+        for (let i = 0; i < lines.length; i++) {
+          RENDER.drawText(ctx, vp,
+            { x: e.p.x, y: e.p.y - (i + 1) * ENT.MTEXT_LS * e.height + e.height * 0.45 },
+            lines[i], e.height, 0, color, 'left');
+        }
+        break;
+      }
       case 'hatch':
         RENDER.drawHatch(ctx, vp, e, color, lineWidth, dash);
         break;
@@ -294,6 +303,14 @@ const RENDER = {
         ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x - r, s.y + r); ctx.lineTo(s.x + r, s.y + r);
         ctx.moveTo(s.x - r, s.y); ctx.lineTo(s.x, s.y); ctx.lineTo(s.x, s.y + r);
         break;
+      case 'tan': // circle with tangent bar on top
+        ctx.arc(s.x, s.y, r - 1, 0, Math.PI * 2);
+        ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x + r, s.y - r);
+        break;
+      case 'near': // bowtie
+        ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x + r, s.y + r); ctx.lineTo(s.x + r, s.y - r);
+        ctx.lineTo(s.x - r, s.y + r); ctx.closePath();
+        break;
       default:
         ctx.rect(s.x - r, s.y - r, r * 2, r * 2);
     }
@@ -366,6 +383,32 @@ const RENDER = {
       RENDER.drawReadout(ctx, app, t.dist, t.ang);
     } else if (app.pointer.dyn) {
       RENDER.drawReadout(ctx, app, app.pointer.dyn.dist, app.pointer.dyn.ang);
+    }
+
+    // object snap tracking: acquired points + alignment rays
+    if (app.trackAcq && app.trackAcq.length) {
+      ctx.strokeStyle = '#e0a435';
+      ctx.lineWidth = 1.4;
+      for (const t of app.trackAcq) {
+        const p = vp.w2s(t);
+        ctx.beginPath();
+        ctx.moveTo(p.x - 4, p.y); ctx.lineTo(p.x + 4, p.y);
+        ctx.moveTo(p.x, p.y - 4); ctx.lineTo(p.x, p.y + 4);
+        ctx.stroke();
+      }
+    }
+    if (app.pointer.otrack) {
+      ctx.strokeStyle = 'rgba(224,164,53,0.6)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      for (const ray of app.pointer.otrack.rays) {
+        const a = vp.w2s(ray.from), b = vp.w2s(ray.to);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     // snap marker

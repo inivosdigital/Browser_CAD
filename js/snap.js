@@ -4,10 +4,10 @@
 const SNAP = {
   RANGE_PX: 12,
   // tie-break priority when two candidates are equally close
-  PRIORITY: { end: 6, int: 5, mid: 4, center: 3, quad: 2, perp: 1 },
+  PRIORITY: { end: 6, int: 5, mid: 4, tan: 3.5, center: 3, quad: 2, perp: 1, near: 0.5 },
 
   /* Find the best object snap near screenPt. basePoint (optional) enables
-     perpendicular snap. Returns { pt, kind } or null. */
+     perpendicular and tangent snaps. Returns { pt, kind } or null. */
   find(doc, vp, screenPt, basePoint) {
     if (!doc.settings.osnap) return null;
     const world = vp.s2w(screenPt);
@@ -37,10 +37,22 @@ const SNAP = {
       }
     }
 
-    // perpendicular foot from base point onto nearby segments/circles
-    if (basePoint) {
-      for (const e of near) {
-        const pr = ENT.prims(e);
+    for (const e of near) {
+      const pr = ENT.prims(e);
+
+      // nearest point on the entity itself
+      for (const s of pr.segs) consider(GEO.closestOnSeg(world, s[0], s[1]), 'near');
+      for (const c of pr.circles) {
+        const u = GEO.norm(GEO.sub(world, c.c));
+        consider(GEO.add(c.c, GEO.mul(u, c.r)), 'near');
+      }
+      for (const ar of pr.arcs) {
+        const a = GEO.ang(ar.c, world);
+        if (GEO.angIn(a, ar.a0, ar.a1)) consider(GEO.polar(ar.c, a, ar.r), 'near');
+      }
+
+      if (basePoint) {
+        // perpendicular foot from base point
         for (const s of pr.segs) {
           const t = GEO.segParam(basePoint, s[0], s[1]);
           if (t > 0.001 && t < 0.999) consider(GEO.lerp(s[0], s[1], t), 'perp');
@@ -48,6 +60,20 @@ const SNAP = {
         for (const c of pr.circles) {
           const u = GEO.norm(GEO.sub(basePoint, c.c));
           consider(GEO.add(c.c, GEO.mul(u, c.r)), 'perp');
+        }
+        // tangent points from base point onto circles/arcs
+        const tangents = (c, r) => {
+          const d = GEO.dist(basePoint, c);
+          if (d <= r + 1e-9) return [];
+          const a = GEO.ang(c, basePoint);
+          const off = Math.acos(r / d);
+          return [GEO.polar(c, a + off, r), GEO.polar(c, a - off, r)];
+        };
+        for (const c of pr.circles) for (const t of tangents(c.c, c.r)) consider(t, 'tan');
+        for (const ar of pr.arcs) {
+          for (const t of tangents(ar.c, ar.r)) {
+            if (GEO.angIn(GEO.ang(ar.c, t), ar.a0, ar.a1)) consider(t, 'tan');
+          }
         }
       }
     }

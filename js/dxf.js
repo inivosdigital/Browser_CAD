@@ -131,6 +131,7 @@ const DXF = {
         case 'dim': // exploded for maximum compatibility
         case 'leader':
         case 'ellipse':
+        case 'mtext':
           for (const part of (ENT.explode(e) || [])) writeEnt(part);
           break;
       }

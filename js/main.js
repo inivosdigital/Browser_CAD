@@ -10,6 +10,9 @@ const app = {
   pointer: { screen: { x: 0, y: 0 }, raw: { x: 0, y: 0 }, snapped: { x: 0, y: 0 }, snap: null, inside: false },
   rubber: null,
   anchor: null,       // base point of the active tool (ortho / perp / direct distance)
+  angleLock: null,    // explicit angle override (<30), radians, until next point
+  trackAcq: [],       // acquired osnap-tracking points (F11)
+  _hover: null,
   lastPoint: null,    // last picked point (for @relative coordinates)
   downScreen: null,
   panning: false,
@@ -46,6 +49,8 @@ const app = {
     app.tool = TOOLS[name]();
     app.anchor = null;
     app.rubber = null;
+    app.angleLock = null;
+    app.trackAcq = [];
     app.tool.start(app);
     UI.markActiveTool(app);
     app.requestRender();
@@ -55,12 +60,15 @@ const app = {
     app.tool = TOOLS.select();
     app.anchor = null;
     app.rubber = null;
+    app.angleLock = null;
+    app.trackAcq = [];
     app.tool.start(app);
     UI.markActiveTool(app);
     app.requestRender();
   },
 
   cancel() {
+    if (app.angleLock != null || app.trackAcq.length) { app.angleLock = null; app.trackAcq = []; app.requestRender(); }
     if (app.tool && app.tool.cancelGrip && app.tool.cancelGrip(app)) { app.requestRender(); return; }
     if (app.rubber) { app.rubber = null; app.requestRender(); return; }
     if (app.tool && app.tool.name !== 'select') {
@@ -141,11 +149,21 @@ const app = {
       if (app.tool && app.tool.name === 'select' && app.lastCommand) app.execCommand(app.lastCommand);
       return;
     }
+    // angle override: "<30" locks the next point's direction from the base point
+    const angm = /^<\s*(-?\d+(?:\.\d+)?)$/.exec(raw);
+    if (angm && app.tool && app.tool.name !== 'select') {
+      app.angleLock = parseFloat(angm[1]) * Math.PI / 180;
+      app.print(`Angle locked to ${angm[1]}°.`);
+      app.requestRender();
+      return;
+    }
     const pt = app.parseCoord(raw);
     if (pt) {
       if (app.tool && app.tool.click) {
         app.tool.click(app, pt, {});
         if (app.tool && app.tool.name !== 'select') app.anchor = pt;
+        app.angleLock = null;
+        app.trackAcq = [];
         app.requestRender();
       }
       return;
@@ -165,33 +183,91 @@ const app = {
     const isPointTool = (app.tool && !['select', 'pan'].includes(app.tool.name) &&
       !(app.tool.stage === 'acquire')) || !!(app.tool && app.tool.gripDrag);
     let snap = null;
-    if (isPointTool) snap = SNAP.find(app.doc, app.vp, screen, app.anchor);
-    app.pointer.snap = snap;
-
-    let eff = snap ? { ...snap.pt } : { ...app.pointer.raw };
+    let eff;
     app.pointer.track = null;
-    if (!snap && isPointTool) {
-      const s = app.doc.settings;
-      if (s.snapGrid) eff = SNAP.gridSnap(app.doc, eff);
-      if (s.ortho && app.anchor) {
-        eff = SNAP.ortho(app.anchor, eff);
-      } else if (s.polar && app.anchor) {
-        // polar tracking: lock to angle increments when the cursor is near a tracking ray
-        const d = GEO.sub(app.pointer.raw, app.anchor);
-        const dist = GEO.len(d);
-        if (dist > app.vp.pxToWorld(4)) {
-          const inc = (s.polarInc || 45) * Math.PI / 180;
-          const ang = Math.atan2(d.y, d.x);
-          const locked = Math.round(ang / inc) * inc;
-          let diff = Math.abs(ang - locked);
-          if (diff > Math.PI) diff = Math.PI * 2 - diff;
-          if (diff < 6 * Math.PI / 180) {
-            eff = GEO.polar(app.anchor, locked, dist);
-            app.pointer.track = { base: app.anchor, ang: locked, dist };
+    app.pointer.otrack = null;
+
+    if (isPointTool && app.angleLock != null && app.anchor) {
+      // explicit angle override (<30): project the cursor onto the locked ray
+      const u = { x: Math.cos(app.angleLock), y: Math.sin(app.angleLock) };
+      const t = GEO.dot(GEO.sub(app.pointer.raw, app.anchor), u);
+      eff = GEO.add(app.anchor, GEO.mul(u, t));
+      app.pointer.track = { base: app.anchor, ang: app.angleLock, dist: Math.abs(t) };
+    } else {
+      if (isPointTool) snap = SNAP.find(app.doc, app.vp, screen, app.anchor);
+      eff = snap ? { ...snap.pt } : { ...app.pointer.raw };
+      if (!snap && isPointTool) {
+        const s = app.doc.settings;
+        if (s.snapGrid) eff = SNAP.gridSnap(app.doc, eff);
+        // object snap tracking: align with acquired points
+        let tracked = false;
+        if (s.otrack && app.trackAcq.length) {
+          const tol = app.vp.pxToWorld(8);
+          let vx = null, hy = null;
+          for (const t of app.trackAcq) {
+            if (!vx && Math.abs(app.pointer.raw.x - t.x) < tol) vx = t;
+            if (!hy && Math.abs(app.pointer.raw.y - t.y) < tol) hy = t;
+          }
+          if (vx || hy) {
+            eff = { x: vx ? vx.x : app.pointer.raw.x, y: hy ? hy.y : app.pointer.raw.y };
+            const rays = [];
+            if (vx) rays.push({ from: vx, to: eff });
+            if (hy && hy !== vx) rays.push({ from: hy, to: eff });
+            app.pointer.otrack = { rays };
+            tracked = true;
+          }
+        }
+        if (!tracked) {
+          if (s.ortho && app.anchor) {
+            eff = SNAP.ortho(app.anchor, eff);
+          } else if (s.polar && app.anchor) {
+            // polar tracking: lock to angle increments when the cursor is near a tracking ray
+            const d = GEO.sub(app.pointer.raw, app.anchor);
+            const dist = GEO.len(d);
+            if (dist > app.vp.pxToWorld(4)) {
+              const inc = (s.polarInc || 45) * Math.PI / 180;
+              const ang = Math.atan2(d.y, d.x);
+              const locked = Math.round(ang / inc) * inc;
+              let diff = Math.abs(ang - locked);
+              if (diff > Math.PI) diff = Math.PI * 2 - diff;
+              if (diff < 6 * Math.PI / 180) {
+                eff = GEO.polar(app.anchor, locked, dist);
+                app.pointer.track = { base: app.anchor, ang: locked, dist };
+              }
+            }
           }
         }
       }
     }
+    app.pointer.snap = snap;
+
+    // hover-acquire tracking points (pause on an osnap marker for ~1/3 s);
+    // a timer handles the stationary-mouse case since this only runs on movement
+    if (snap && isPointTool && app.doc.settings.otrack) {
+      const key = `${snap.pt.x.toFixed(6)},${snap.pt.y.toFixed(6)}`;
+      const acquire = (pt) => {
+        if (!app.trackAcq.some(t => GEO.eq(t, pt))) {
+          app.trackAcq.push({ ...pt });
+          if (app.trackAcq.length > 3) app.trackAcq.shift();
+          app.requestRender();
+        }
+      };
+      const now = performance.now();
+      if (app._hover && app._hover.key === key) {
+        if (now - app._hover.since > 350) acquire(snap.pt);
+      } else {
+        app._hover = { key, since: now };
+        clearTimeout(app._hoverTimer);
+        const pt = { ...snap.pt };
+        app._hoverTimer = setTimeout(() => {
+          if (app._hover && app._hover.key === key && app.doc.settings.otrack) acquire(pt);
+        }, 360);
+      }
+    } else if (!snap) {
+      app._hover = null;
+      clearTimeout(app._hoverTimer);
+    }
+
     app.pointer.snapped = eff;
     // dynamic input: live distance<angle readout from the tool's base point
     app.pointer.dyn = null;
@@ -309,6 +385,12 @@ function initApp() {
 
   app.doc.onChange = () => {
     ENT.units = app.doc.settings.units || 'decimal';
+    const ds = app.doc.settings.dimStyle || {};
+    ENT.DIM_TEXT = ds.textHeight || 2.5;
+    ENT.DIM_ARROW = ds.arrow || 2.5;
+    ENT.DIM_EXT_GAP = ds.extGap == null ? 1.0 : ds.extGap;
+    ENT.DIM_EXT_OVER = ds.extOver == null ? 1.2 : ds.extOver;
+    ENT.dimPrecision = ds.precision == null ? 2 : ds.precision;
     app.requestRender();
     UI.refreshProps(app);
     UI.setDocTitle(app.docName, app.doc.modified);
@@ -364,6 +446,8 @@ function initApp() {
         if (app.tool && !['select', 'pan'].includes(app.tool.name) && app.tool.stage !== 'acquire') {
           app.anchor = app.pointer.snapped;
         }
+        app.angleLock = null;
+        app.trackAcq = [];
       }
       app.requestRender();
     }
@@ -396,6 +480,23 @@ function initApp() {
     }
   });
 
+  app.canvas.addEventListener('dblclick', (ev) => {
+    if (!app.tool || app.tool.name !== 'select') return;
+    app.updatePointer(ev);
+    const tol = app.pickTol();
+    for (let i = app.doc.entities.length - 1; i >= 0; i--) {
+      const e = app.doc.entities[i];
+      if (e.type !== 'mtext' || !app.doc.selectable(e) || !ENT.hitTest(e, app.pointer.raw, tol)) continue;
+      UI.openMtextEditor(app, e, (text) => {
+        if (text === null) return;
+        app.doc.checkpoint();
+        e.text = text;
+        app.doc._changed();
+      });
+      return;
+    }
+  });
+
   app.canvas.addEventListener('pointerleave', () => {
     app.pointer.inside = false;
     app.requestRender();
@@ -420,9 +521,39 @@ function initApp() {
   /* ----- command line ----- */
   const history = [];
   let histIdx = -1;
+  cmdInput.addEventListener('input', () => UI.updateSuggest(app, cmdInput.value));
   cmdInput.addEventListener('keydown', (ev) => {
+    if (UI.suggestOpen()) {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); UI.moveSuggest(1); return; }
+      if (ev.key === 'ArrowUp') { ev.preventDefault(); UI.moveSuggest(-1); return; }
+      if (ev.key === 'Tab') {
+        ev.preventDefault();
+        const c = UI.acceptSuggest();
+        if (c) cmdInput.value = c;
+        return;
+      }
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        ev.stopPropagation();
+        UI.closeSuggest();
+        return;
+      }
+      if (ev.key === 'Enter') {
+        const c = UI.acceptSuggest(true); // only when explicitly highlighted
+        UI.closeSuggest();
+        if (c) {
+          ev.preventDefault();
+          cmdInput.value = '';
+          history.push(c);
+          histIdx = history.length;
+          app.submitInput(c);
+          return;
+        }
+      }
+    }
     if (ev.key === 'Enter') {
       ev.preventDefault();
+      UI.closeSuggest();
       const v = cmdInput.value;
       cmdInput.value = '';
       if (v.trim()) { history.push(v); histIdx = history.length; }
@@ -443,6 +574,7 @@ function initApp() {
 
   /* ----- global keys ----- */
   window.addEventListener('keydown', (ev) => {
+    if (ev.target && ev.target.closest && ev.target.closest('#mtext-editor')) return;
     const key = ev.key;
     const mod = ev.ctrlKey || ev.metaKey;
 
@@ -460,6 +592,7 @@ function initApp() {
     if (key === 'F8') { ev.preventDefault(); app.execCommand('ortho'); return; }
     if (key === 'F9') { ev.preventDefault(); app.execCommand('snap'); return; }
     if (key === 'F10') { ev.preventDefault(); app.execCommand('polar'); return; }
+    if (key === 'F11') { ev.preventDefault(); app.execCommand('otrack'); return; }
     if (key === 'F12') { ev.preventDefault(); app.execCommand('dyn'); return; }
 
     if (mod && key.toLowerCase() === 'z' && !ev.shiftKey) { ev.preventDefault(); app.execCommand('undo'); return; }

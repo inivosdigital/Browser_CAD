@@ -41,6 +41,7 @@ const ICONS = {
   chamfer: '<path d="M3 17 V9 L9 3 H17"/>',
   dimcontinue: '<path d="M3 4 V12 M10 4 V12 M17 4 V12 M3 8 H17"/><path d="M5 15 H15 M13 13.5 L15 15 L13 16.5"/>',
   dimbaseline: '<path d="M3 3 V17 M11 5 V11 M17 11 V17 M3 8 H11 M3 14 H17"/>',
+  mtext: '<rect x="3" y="4" width="14" height="12"/><path d="M5 8 H15 M5 11 H15 M5 14 H11"/>',
 };
 
 function svgIcon(name) {
@@ -68,6 +69,7 @@ const TOOLBAR_GROUPS = [
       { icon: 'ellipse', label: 'Ellipse', cmd: 'ellipse', tip: 'Ellipse (EL)' },
       { icon: 'point', label: 'Point', cmd: 'point', tip: 'Point (PO)' },
       { icon: 'text', label: 'Text', cmd: 'text', tip: 'Text (T)' },
+      { icon: 'mtext', label: 'MText', cmd: 'mtext', tip: 'Multiline text (MT) — double-click to edit' },
       { icon: 'hatch', label: 'Hatch', cmd: 'hatch', tip: 'Hatch (H)' },
     ],
   },
@@ -122,6 +124,7 @@ const UI = {
     UI.bindStatusBar(app);
     UI.bindLayerPanel(app);
     UI.buildHelp(app);
+    UI.bindDimStyle(app);
     UI.refreshLayers(app);
     UI.refreshProps(app);
     UI.refreshStatus(app);
@@ -168,7 +171,7 @@ const UI = {
       fillet: 'fillet', explode: 'explode', erase: 'erase',
       hatch: 'hatch', block: 'block', insert: 'insert',
       dimradius: 'dimradius', dimdiameter: 'dimradius', dimangular: 'dimangular',
-      ellipse: 'ellipse', leader: 'leader', break: 'break', join: 'join',
+      ellipse: 'ellipse', leader: 'leader', mtext: 'mtext', break: 'break', join: 'join',
       stretch: 'stretch', chamfer: 'chamfer',
       dimcontinue: 'dimcontinue', dimbaseline: 'dimbaseline', plot: '_select',
     };
@@ -220,6 +223,7 @@ const UI = {
     bind('tog-snap', 'snap');
     bind('tog-ortho', 'ortho');
     bind('tog-polar', 'polar');
+    bind('tog-otrack', 'otrack');
     bind('tog-dyn', 'dyn');
     bind('tog-osnap', 'osnap');
   },
@@ -231,6 +235,7 @@ const UI = {
     set('tog-snap', s.snapGrid);
     set('tog-ortho', s.ortho);
     set('tog-polar', s.polar);
+    set('tog-otrack', s.otrack);
     set('tog-dyn', s.dynInput);
     set('tog-osnap', s.osnap);
     document.getElementById('zoom-level').textContent = `${(app.vp.scale * 100 / 4).toFixed(0)}%`;
@@ -502,6 +507,20 @@ const UI = {
         row('Rotation °', numField(degOf(e.rotation || 0), v => { e.rotation = v * Math.PI / 180; }));
         break;
       }
+      case 'mtext': {
+        const ta = document.createElement('textarea');
+        ta.rows = 3;
+        ta.value = e.text;
+        ta.addEventListener('change', () => {
+          app.doc.checkpoint();
+          e.text = ta.value;
+          app.doc._changed();
+        });
+        row('Text', ta);
+        row('Height', numField(e.height, v => { if (v > 0) e.height = v; }));
+        row('Width', numField(e.width, v => { if (v > 0) e.width = v; }));
+        break;
+      }
       case 'dim':
         info('Value', ENT.formatDim(ENT.dimValue(e)));
         info('Type', e.dtype);
@@ -534,6 +553,10 @@ const UI = {
       ['Coordinates', '10,20 absolute · @10,20 relative · @15&lt;45 polar · bare length = distance along cursor'],
       ['Lengths', "decimal or feet-inches: 42 · 3'6 · 3'-6 1/2\" · 18\" · 6 1/2 (1 unit = 1\")"],
       ['Polar tracking', 'F10 — locks the cursor to 45° increments with a distance&lt;angle readout'],
+      ['Osnap tracking', 'F11 — hover an osnap to acquire a point, then align with dotted rays'],
+      ['Angle override', 'type &lt;30 to lock the next point to a 30° bearing'],
+      ['Autocomplete', 'type a command — Tab completes, ↑/↓ choose, Enter runs'],
+      ['MText', 'MT draws a text box; double-click any mtext to edit in place'],
       ['Dynamic input', 'F12 — live distance&lt;angle tooltip at the cursor before the next click'],
       ['F1', 'Help'], ['F3', 'Object snap'], ['F7', 'Grid'], ['F8', 'Ortho'], ['F9', 'Grid snap'], ['F10', 'Polar tracking'], ['F12', 'Dynamic input'],
       ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+A', 'Select all'], ['Ctrl+S', 'Save'], ['Delete', 'Erase selection'],
@@ -547,6 +570,150 @@ const UI = {
 
   showHelp() {
     document.getElementById('help-modal').hidden = false;
+  },
+
+  /* ---- mtext in-canvas editor ---- */
+
+  openMtextEditor(app, ent, onDone) {
+    const wrap = document.getElementById('canvas-wrap');
+    const old = document.getElementById('mtext-editor');
+    if (old) old.remove();
+    const tl = app.vp.w2s(ent.p);
+    const wPx = Math.max(ent.width * app.vp.scale, 160);
+    const lines = ENT.mtextLines(ent);
+    const hPx = Math.max(lines.length * ENT.MTEXT_LS * ent.height * app.vp.scale, 70);
+    const ed = document.createElement('div');
+    ed.id = 'mtext-editor';
+    ed.style.left = Math.max(4, Math.min(tl.x, app.vp.w - wPx - 8)) + 'px';
+    ed.style.top = Math.max(4, Math.min(tl.y, app.vp.h - hPx - 40)) + 'px';
+    ed.style.width = wPx + 'px';
+    const ta = document.createElement('textarea');
+    ta.value = ent.text || '';
+    ta.style.height = hPx + 'px';
+    ta.spellcheck = false;
+    const bar = document.createElement('div');
+    bar.className = 'mtext-bar';
+    const ok = document.createElement('button');
+    ok.textContent = 'OK (Ctrl+Enter)';
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel (Esc)';
+    bar.append(ok, cancel);
+    ed.append(ta, bar);
+    wrap.appendChild(ed);
+    ta.focus();
+    const close = (text) => {
+      ed.remove();
+      document.getElementById('cmd-input').focus();
+      onDone(text);
+      app.requestRender();
+    };
+    ok.addEventListener('click', () => close(ta.value));
+    cancel.addEventListener('click', () => close(null));
+    ta.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); close(ta.value); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); close(null); }
+    });
+  },
+
+  /* ---- dimension style dialog ---- */
+
+  openDimStyle(app) {
+    const modal = document.getElementById('dimstyle-modal');
+    const ds = app.doc.settings.dimStyle;
+    document.getElementById('ds-text').value = ds.textHeight;
+    document.getElementById('ds-arrow').value = ds.arrow;
+    document.getElementById('ds-gap').value = ds.extGap;
+    document.getElementById('ds-over').value = ds.extOver;
+    document.getElementById('ds-prec').value = ds.precision;
+    modal.hidden = false;
+  },
+
+  bindDimStyle(app) {
+    const modal = document.getElementById('dimstyle-modal');
+    document.getElementById('ds-apply').addEventListener('click', () => {
+      const num = (id, min) => {
+        const v = parseFloat(document.getElementById(id).value);
+        return Number.isNaN(v) ? null : Math.max(min, v);
+      };
+      const ds = app.doc.settings.dimStyle;
+      ds.textHeight = num('ds-text', 0.1) || ds.textHeight;
+      ds.arrow = num('ds-arrow', 0.1) || ds.arrow;
+      ds.extGap = num('ds-gap', 0);
+      ds.extOver = num('ds-over', 0);
+      ds.precision = Math.round(num('ds-prec', 0) == null ? ds.precision : num('ds-prec', 0));
+      modal.hidden = true;
+      app.doc._changed();
+      app.print('Dimension style updated.');
+    });
+    document.getElementById('ds-close').addEventListener('click', () => { modal.hidden = true; });
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.hidden = true; });
+  },
+
+  /* ---- command autocomplete ---- */
+
+  _suggest: { items: [], idx: -1 },
+
+  updateSuggest(app, value) {
+    const box = document.getElementById('cmd-suggest');
+    const v = value.trim().toLowerCase();
+    const idle = app.tool && app.tool.name === 'select' && !app.tool.gripDrag;
+    if (!idle || !v || !/^[a-z?]+$/.test(v)) { UI.closeSuggest(); return; }
+    const seen = new Set();
+    const items = [];
+    for (const [name, cmd] of Object.entries(COMMANDS)) {
+      if (name.startsWith(v) && !seen.has(name)) { seen.add(name); items.push({ cmd: name, via: null, help: cmd.help }); }
+    }
+    for (const [alias, target] of Object.entries(ALIASES)) {
+      if (alias.startsWith(v) && !seen.has(target)) {
+        seen.add(target);
+        items.push({ cmd: target, via: alias, help: (COMMANDS[target] || {}).help });
+      }
+    }
+    items.sort((a, b) => a.cmd.localeCompare(b.cmd));
+    UI._suggest = { items: items.slice(0, 8), idx: -1 };
+    if (!UI._suggest.items.length) { UI.closeSuggest(); return; }
+    box.innerHTML = '';
+    UI._suggest.items.forEach((it, i) => {
+      const div = document.createElement('div');
+      div.className = 'suggest-item';
+      div.innerHTML = `<b>${it.cmd.toUpperCase()}</b><span class="suggest-alias">${it.via ? it.via.toUpperCase() : ''}</span><span class="suggest-help">${it.help || ''}</span>`;
+      div.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        UI.closeSuggest();
+        document.getElementById('cmd-input').value = '';
+        app.submitInput(it.cmd);
+      });
+      box.appendChild(div);
+    });
+    box.hidden = false;
+  },
+
+  suggestOpen() {
+    const box = document.getElementById('cmd-suggest');
+    return box && !box.hidden;
+  },
+
+  moveSuggest(dir) {
+    const sg = UI._suggest;
+    if (!sg.items.length) return;
+    sg.idx = (sg.idx + dir + sg.items.length) % sg.items.length;
+    const box = document.getElementById('cmd-suggest');
+    [...box.children].forEach((el, i) => el.classList.toggle('sel', i === sg.idx));
+  },
+
+  // returns the command to run, or null. onlyExplicit: require a highlighted row.
+  acceptSuggest(onlyExplicit) {
+    const sg = UI._suggest;
+    if (!sg.items.length) return null;
+    if (sg.idx >= 0) return sg.items[sg.idx].cmd;
+    return onlyExplicit ? null : sg.items[0].cmd;
+  },
+
+  closeSuggest() {
+    const box = document.getElementById('cmd-suggest');
+    if (box) box.hidden = true;
+    UI._suggest = { items: [], idx: -1 };
   },
 
   setDocTitle(name, modified) {

@@ -142,6 +142,13 @@ const PDF = {
           break;
         }
         case 'text': text(e.p, e.text, e.height, e.rotation || 0, 'left'); break;
+        case 'mtext': {
+          const mls = ENT.mtextLines(e);
+          for (let i = 0; i < mls.length; i++) {
+            text({ x: e.p.x, y: e.p.y - (i + 1) * ENT.MTEXT_LS * e.height + e.height * 0.45 }, mls[i], e.height, 0, 'left');
+          }
+          break;
+        }
         case 'dim': {
           const g = ENT.dimGeometry(e);
           for (const l of g.lines) seg(l.a, l.b);

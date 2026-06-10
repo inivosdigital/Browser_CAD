@@ -22,8 +22,9 @@ from any plain static host — GitHub Pages included.)
 ## Features
 
 **Drafting**
-- Line, Polyline, Circle (center-radius / 2P), Arc (3-point / center), Rectangle,
-  Polygon, **Ellipse**, Point, single-line Text
+- Line, Polyline, Circle (center-radius / 2P / 3P), Arc (3-point / center),
+  Rectangle, Polygon, **Ellipse**, Point, single-line Text, **MTEXT** multiline
+  text with an in-canvas editor (double-click to edit)
 - Hatching of closed boundaries (diagonal lines, crosshatch, or solid fill)
 - Blocks: define a block from a selection (`BLOCK`/`B`), insert references with
   scale + rotation (`INSERT`/`I`), explode back to geometry
@@ -33,7 +34,8 @@ from any plain static host — GitHub Pages included.)
   `DIST` measuring tool
 
 **Editing**
-- Move, Copy (repeating), Rotate, Scale, Mirror, Offset (line/circle/arc/polyline),
+- Move, Copy (repeating), Rotate and Scale (incl. **Reference** option),
+  Mirror, Offset (line/circle/arc/polyline),
   Trim (all objects act as cutting edges), **Extend** (to the nearest boundary),
   **Break** (incl. split-at-point), **Join** (lines/polylines/arcs → one object),
   **Stretch** (crossing-window vertex editing), Fillet (radius or sharp corner),
@@ -58,7 +60,12 @@ from any plain static host — GitHub Pages included.)
   dashed tracking line and a live `distance<angle` readout — aim, type `3'6`,
   Enter, exactly like AutoCAD direct distance entry
 - Object snaps with glyph markers: endpoint □, midpoint △, center ○, quadrant ◇,
-  intersection ✕, perpendicular ⊾ (F3)
+  intersection ✕, perpendicular ⊾, **tangent ⊙, nearest ⧖** (F3)
+- **Object snap tracking** (F11): pause on an osnap to acquire a point, then
+  align along dotted horizontal/vertical rays — AutoCAD's OTRACK
+- **Angle override**: type `<30` to lock the next point to an exact bearing
+- **Command autocomplete**: type and Tab/↑↓/Enter through matching commands
+- **Dimension style** (`D`): text height, arrow size, extension lines, precision
 - Ortho mode (F8, mutually exclusive with polar), grid + grid snap (F7/F9),
   crosshair cursor with pickbox
 - Right-click = Enter; Enter on an empty command line repeats the last command
@@ -132,7 +139,6 @@ round-trip, and a full DXF export→import round-trip.
 
 ## Roadmap ideas
 
-See [docs/AUTOCAD-LT-PARITY.md](docs/AUTOCAD-LT-PARITY.md) — next up (P2):
-osnap tangent/nearest + object snap tracking, angle override (`<30`), polyline
-arc segments + PEDIT Join, circle 3P, rotate/scale Reference, MTEXT, dimension
-styles, hatch pattern library, command autocomplete, DXF R2000, paper-space layout.
+See [docs/AUTOCAD-LT-PARITY.md](docs/AUTOCAD-LT-PARITY.md) — next up (P2b):
+polyline arc segments + PEDIT Join, hatch pattern library, DXF R2000,
+paper-space layout with viewports.
