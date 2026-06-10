@@ -10,13 +10,38 @@ const UNITS = {
   PAPERS: {
     letter: [8.5, 11],
     'ansi-b': [11, 17],
+    'ansi-c': [17, 22],
+    'ansi-d': [22, 34],
+    'ansi-e': [34, 44],
+    'arch-a': [9, 12],
+    'arch-b': [12, 18],
+    'arch-c': [18, 24],
+    'arch-d': [24, 36],
+    'arch-e1': [30, 42],
+    'arch-e': [36, 48],
     a4: [8.27, 11.69],
     a3: [11.69, 16.54],
-    'arch-d': [24, 36],
+    a2: [16.54, 23.39],
+    a1: [23.39, 33.11],
+    a0: [33.11, 46.81],
   },
   paperDims(name, landscape) {
     const d = UNITS.PAPERS[name] || UNITS.PAPERS.letter;
     return landscape ? [d[1], d[0]] : [d[0], d[1]];
+  },
+  // sheet dims for a layout, honoring custom sizes
+  layoutDims(layout) {
+    if (layout.paper === 'custom') return [layout.customW || 11, layout.customH || 8.5];
+    return UNITS.paperDims(layout.paper, layout.landscape);
+  },
+  // match WxH inches to a standard paper (either orientation) within tol
+  matchPaper(w, h, tol) {
+    const t = tol == null ? 0.4 : tol;
+    for (const [name, d] of Object.entries(UNITS.PAPERS)) {
+      if (Math.abs(d[0] - w) <= t && Math.abs(d[1] - h) <= t) return { paper: name, landscape: false };
+      if (Math.abs(d[1] - w) <= t && Math.abs(d[0] - h) <= t) return { paper: name, landscape: true };
+    }
+    return null;
   },
   // annotation / viewport scale label: 48 -> 1/4"=1'-0"
   scaleLabel(n) {

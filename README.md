@@ -26,8 +26,10 @@ from any plain static host — GitHub Pages included.)
   Rectangle, Polygon, **Ellipse**, Point, single-line Text, **MTEXT** multiline
   text with an in-canvas editor (double-click to edit)
 - Hatching of closed boundaries (diagonal lines, crosshatch, or solid fill)
-- Blocks: define a block from a selection (`BLOCK`/`B`), insert references with
-  scale + rotation (`INSERT`/`I`), explode back to geometry
+- Blocks: define a block from a selection (`BLOCK`/`B`, re-using a name
+  redefines it everywhere), insert references with scale + rotation
+  (`INSERT`/`I`), **edit in place** (`BEDIT`/`BE` or double-click an insert,
+  `BCLOSE` to finish — every insert updates), explode back to geometry
 - Linear (horizontal/vertical), aligned, **radius, diameter, and angular**
   dimensions with arrowheads and live measured values; **Continue (`DCO`) and
   Baseline (`DBA`) dimension chains**; **Leaders** with text (`LE`);
@@ -94,8 +96,9 @@ from any plain static host — GitHub Pages included.)
 - **Annotation scale** (`ANNOSCALE`, status-bar chip): sizes dims/leaders for
   the target viewport scale, AutoCAD CANNOSCALE-style
 - **Template import** (File → Import Template): export your AutoCAD `.dwt`
-  once as DXF — the title block lands in the layout, block definitions and
-  layers included, sheet size auto-detected
+  once as DXF — **each template layout becomes its own tab** at the sheet size
+  declared in the template (ANSI A-E, ARCH A-E, ISO A0-A4, or custom sizes),
+  with title-block coordinates preserved, block definitions and layers included
 - **Layout plotting**: PLOT in a layout produces a 1:1 vector PDF of the sheet
   with viewport contents clipped and scaled
 

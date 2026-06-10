@@ -107,7 +107,7 @@ const app = {
     let b = app.doc.bbox();
     const layout = app.doc.activeLayout();
     if (layout) {
-      const [W, H] = UNITS.paperDims(layout.paper, layout.landscape);
+      const [W, H] = UNITS.layoutDims(layout);
       b = GEO.bbValid(b) ? GEO.bbUnion(b, { x1: 0, y1: 0, x2: W, y2: H }) : { x1: 0, y1: 0, x2: W, y2: H };
     }
     return b;
@@ -127,7 +127,9 @@ const app = {
       app.vp.zoomExtents(app.activeBBox());
     }
     const layout = app.doc.activeLayout();
-    app.print(layout ? `Paper space: ${layout.name} (${layout.paper.toUpperCase()}).` : 'Model space.');
+    const blk = app.doc.editingBlock();
+    if (blk) app.print(`Editing block "${blk}" — changes apply to every insert. BCLOSE to finish.`);
+    else app.print(layout ? `Paper space: ${layout.name} (${layout.paper.toUpperCase()}).` : 'Model space.');
     UI.refreshTabs(app);
     UI.refreshProps(app);
     UI.refreshStatus(app);
@@ -368,44 +370,58 @@ const app = {
     }
     try {
       const res = DXF.importText(text);
-      const layout = app.doc.activeLayout() || app.doc.layouts[0];
-      const src = res.paperEntities.length ? res.paperEntities : res.entities;
-      if (!src.length) { app.print('No usable entities found in the template.', 'err'); return; }
+      const srcLayouts = (res.paperLayouts || []).filter(l => l.entities.length);
+      if (!srcLayouts.length && !res.entities.length) {
+        app.print('No usable entities found in the template.', 'err');
+        return;
+      }
       app.doc.checkpoint();
       for (const [bn, bdef] of Object.entries(res.blocks || {})) {
         if (!app.doc.blocks[bn]) app.doc.blocks[bn] = bdef;
       }
       for (const ly of res.layers) if (!app.doc.layer(ly.name)) app.doc.layers.push(ly);
-      layout.entities = src;
-      // size the sheet to the title block extents
-      let bb = GEO.bbEmpty();
-      for (const e of src) bb = GEO.bbUnion(bb, ENT.bbox(e));
-      if (GEO.bbValid(bb)) {
-        const w = bb.x2 - bb.x1, h = bb.y2 - bb.y1;
-        let best = 'letter', bestErr = Infinity;
-        for (const [pname, dims] of Object.entries(UNITS.PAPERS)) {
-          for (const land of [false, true]) {
-            const [W, H] = land ? [dims[1], dims[0]] : dims;
-            if (W >= w - 0.6 && H >= h - 0.6) {
-              const err = (W - w) + (H - h);
-              if (err < bestErr) { bestErr = err; best = pname; layout.landscape = land; }
-            }
-          }
+
+      // build one BrowserCAD layout per template layout (fall back to model
+      // entities as a single title block when the DXF has no paper space)
+      const sources = srcLayouts.length ? srcLayouts : [{ name: 'Layout1', w: 0, h: 0, entities: res.entities }];
+      const newLayouts = sources.map(srcL => {
+        const layout = { name: srcL.name, paper: 'letter', landscape: true, entities: srcL.entities };
+        let bb = GEO.bbEmpty();
+        for (const e of srcL.entities) bb = GEO.bbUnion(bb, ENT.bbox(e));
+        const cw = GEO.bbValid(bb) ? bb.x2 - bb.x1 : 0;
+        const ch = GEO.bbValid(bb) ? bb.y2 - bb.y1 : 0;
+        // prefer the sheet size declared in the template's LAYOUT object
+        let W = srcL.w, H = srcL.h;
+        if (!(W > 1 && H > 1)) { W = cw + 0.5; H = ch + 0.5; } // fall back to content extents
+        const std = UNITS.matchPaper(W, H, 0.4);
+        if (std) {
+          layout.paper = std.paper;
+          layout.landscape = std.landscape;
+        } else {
+          layout.paper = 'custom';
+          layout.customW = +W.toFixed(2);
+          layout.customH = +H.toFixed(2);
         }
-        layout.paper = best;
-        // shift the title block to the sheet origin
-        if (Math.abs(bb.x1) > 1e-6 || Math.abs(bb.y1) > 1e-6) {
-          const xf = ENT.xfTranslate({ x: -bb.x1, y: -bb.y1 });
+        // keep template coordinates when the content already sits on the sheet;
+        // otherwise center it
+        const [SW, SH] = UNITS.layoutDims(layout);
+        if (GEO.bbValid(bb) && (bb.x1 < -0.01 || bb.y1 < -0.01 || bb.x2 > SW + 0.01 || bb.y2 > SH + 0.01)) {
+          const xf = ENT.xfTranslate({ x: (SW - cw) / 2 - bb.x1, y: (SH - ch) / 2 - bb.y1 });
           for (const e of layout.entities) ENT.transform(e, xf);
         }
-      }
+        return layout;
+      });
+      app.doc.layouts = newLayouts;
       app.doc._changed();
-      const idx = app.doc.layouts.indexOf(layout);
-      if (app.doc.space !== idx) app.setSpace(idx);
-      else { app.vp.zoomExtents(app.activeBBox()); app.requestRender(); }
+      app.doc.space = 'model'; // force the space switch below to re-zoom
+      app.setSpace(0);
       UI.refreshLayers(app);
       UI.refreshTabs(app);
-      app.print(`Template imported: ${src.length} entities → ${layout.name} (${layout.paper.toUpperCase()} ${layout.landscape ? 'landscape' : 'portrait'}).`);
+      const names = newLayouts.map(l => {
+        const [W, H] = UNITS.layoutDims(l);
+        return `${l.name} (${l.paper === 'custom' ? `${W}×${H}"` : l.paper.toUpperCase()})`;
+      });
+      app.print(`Template imported: ${newLayouts.length} layout(s) — ${names.join(', ')}.`);
     } catch (err) {
       app.print(`Could not import template: ${err.message}`, 'err');
     }
@@ -582,6 +598,10 @@ function initApp() {
     const tol = app.pickTol();
     for (let i = app.doc.entities.length - 1; i >= 0; i--) {
       const e = app.doc.entities[i];
+      if (e.type === 'insert' && app.doc.selectable(e) && ENT.hitTest(e, app.pointer.raw, tol) && app.doc.blocks[e.name]) {
+        app.setSpace('block:' + e.name);
+        return;
+      }
       if (e.type !== 'mtext' || !app.doc.selectable(e) || !ENT.hitTest(e, app.pointer.raw, tol)) continue;
       UI.openMtextEditor(app, e, (text) => {
         if (text === null) return;

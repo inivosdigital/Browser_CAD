@@ -38,19 +38,31 @@ class CadDocument {
     this.onChange = null; // callback(doc)
   }
 
-  // `entities` resolves to the active space so every tool works in both spaces
+  // `entities` resolves to the active space (model, a layout, or a block
+  // being edited) so every tool works everywhere
   get entities() {
     if (this.space === 'model') return this.modelEntities;
+    if (typeof this.space === 'string' && this.space.startsWith('block:')) {
+      const b = this.blocks[this.space.slice(6)];
+      return b ? b.entities : this.modelEntities;
+    }
     const l = this.layouts[this.space];
     return l ? l.entities : this.modelEntities;
   }
   set entities(v) {
     if (this.space === 'model') this.modelEntities = v;
-    else if (this.layouts[this.space]) this.layouts[this.space].entities = v;
+    else if (typeof this.space === 'string' && this.space.startsWith('block:')) {
+      const b = this.blocks[this.space.slice(6)];
+      if (b) b.entities = v;
+    } else if (this.layouts[this.space]) this.layouts[this.space].entities = v;
   }
 
   activeLayout() {
-    return this.space === 'model' ? null : this.layouts[this.space];
+    return (typeof this.space === 'number' && this.layouts[this.space]) ? this.layouts[this.space] : null;
+  }
+
+  editingBlock() {
+    return (typeof this.space === 'string' && this.space.startsWith('block:')) ? this.space.slice(6) : null;
   }
 
   /* ---- layers ---- */

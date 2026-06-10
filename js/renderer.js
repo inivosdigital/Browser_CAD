@@ -467,7 +467,7 @@ const RENDER = {
   },
 
   drawPaper(ctx, vp, layout) {
-    const [W, H] = UNITS.paperDims(layout.paper, layout.landscape);
+    const [W, H] = UNITS.layoutDims(layout);
     const a = vp.w2s({ x: 0, y: 0 }), b = vp.w2s({ x: W, y: H });
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
     const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);

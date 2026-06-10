@@ -1524,7 +1524,7 @@ TOOLS.block = () => ({
     if (this.stage === 'name') {
       const name = raw.trim();
       if (!name) { app.print('A name is required.'); return true; }
-      if (app.doc.blocks[name]) { app.print(`Block "${name}" already exists.`); return true; }
+      if (app.doc.blocks[name]) app.print(`Block "${name}" exists — it will be redefined (all inserts update).`);
       this.bname = name;
       this.rawInput = false;
       this.stage = 'base';
@@ -1533,6 +1533,29 @@ TOOLS.block = () => ({
     }
     if (raw === '') { app.endTool(); return true; }
     return false;
+  },
+});
+
+TOOLS.bedit = () => ({
+  name: 'bedit',
+  rawInput: true,
+  start(app) {
+    const names = Object.keys(app.doc.blocks);
+    if (!names.length) { app.print('No blocks defined.'); app.endTool(); return; }
+    if (names.length === 1) {
+      app.endTool();
+      app.setSpace('block:' + names[0]);
+      return;
+    }
+    app.prompt(`BEDIT — Block name [${names.join(', ')}]:`);
+  },
+  input(app, raw) {
+    const name = raw.trim();
+    if (!name) { app.endTool(); return true; }
+    if (!app.doc.blocks[name]) { app.print(`Unknown block "${name}".`); return true; }
+    app.endTool();
+    app.setSpace('block:' + name);
+    return true;
   },
 });
 
@@ -1702,7 +1725,8 @@ TOOLS.plot = () => ({
       // plotting a layout: the sheet defines area and scale (1:1)
       const name = app.docName.replace(/\.(json|dxf|pdf)$/i, '') + '-' + layout.name.toLowerCase() + '.pdf';
       app._download(name, PDF.generateLayout(app.doc, layout), 'application/pdf');
-      app.print(`Plotted ${layout.name} at 1:1 (${layout.paper.toUpperCase()} ${layout.landscape ? 'landscape' : 'portrait'}).`);
+      const [pw, phh] = UNITS.layoutDims(layout);
+      app.print(`Plotted ${layout.name} at 1:1 (${layout.paper === 'custom' ? `${pw}×${phh}"` : layout.paper.toUpperCase()}).`);
       app.endTool();
       return;
     }
@@ -2536,7 +2560,15 @@ const COMMANDS = {
       else app.setSpace((app.doc.space + 1) % app.doc.layouts.length);
     }, help: 'Switch to (next) paper-space layout',
   },
-  template: { fn: (app) => app.fileImportTemplate(), help: 'Import an AutoCAD template (DXF) into the current layout' },
+  template: { fn: (app) => app.fileImportTemplate(), help: 'Import an AutoCAD template (DXF): layouts, sheets, blocks' },
+  bedit: { tool: 'bedit', help: 'Edit a block definition in place (or double-click an insert)' },
+  bclose: {
+    fn: (app) => {
+      if (!app.doc.editingBlock()) { app.print('Not editing a block.'); return; }
+      app.setSpace('model');
+      app.print('Block saved — all inserts updated.');
+    }, help: 'Finish block editing',
+  },
   // toggles
   grid: { fn: (app) => { app.doc.settings.grid = !app.doc.settings.grid; app.refreshStatus(); }, help: 'Toggle grid (F7)' },
   snap: { fn: (app) => { app.doc.settings.snapGrid = !app.doc.settings.snapGrid; app.refreshStatus(); }, help: 'Toggle grid snap (F9)' },
@@ -2605,6 +2637,7 @@ const ALIASES = {
   mt: 'mtext', d: 'dimstyle', dst: 'dimstyle',
   mv: 'mview', vports: 'mview', cannoscale: 'annoscale', ansc: 'annoscale',
   pspace: 'layout', mspace: 'model', ps: 'layout', ms: 'model',
+  be: 'bedit', refedit: 'bedit', bc: 'bclose', refclose: 'bclose',
   h: 'hatch', bh: 'hatch', b: 'block', i: 'insert',
   p: 'pan', z: 'zoom', ze: 'zoom', re: 'regen', u: 'undo', la: 'layer',
   print: 'plot', pdf: 'plot', un: 'units',

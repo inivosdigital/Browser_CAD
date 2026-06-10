@@ -157,7 +157,9 @@ const DXF = {
 
     const layers = [];
     const entities = [];       // model space
-    const paperEntities = [];  // group 67 = 1, or the *Paper_Space block
+    const paperEntities = [];  // all paper-space entities merged (back-compat)
+    const psBuckets = {};      // '*Paper_Space' suffix -> entities (per source layout)
+    const layoutMetas = [];    // OBJECTS section LAYOUT: {name, order, w, h} (inches)
     const blocks = {};         // named block definitions
     const rad = (d) => GEO.normAng(parseFloat(d) * Math.PI / 180);
 
@@ -167,7 +169,11 @@ const DXF = {
 
     const sink = (paper) => {
       if (curBlock) return curBlock.entities;
-      return paper ? paperEntities : entities;
+      if (paper) {
+        psBuckets[''] = psBuckets[''] || [];
+        return psBuckets[''];
+      }
+      return entities;
     };
 
     // reads groups for one entity; pairs[i] is just past the 0/TYPE pair
@@ -328,13 +334,32 @@ const DXF = {
       if (section === 'BLOCKS' && code === 0 && val === 'ENDBLK') {
         if (curBlock && curBlock.name) {
           const lname = curBlock.name.toLowerCase();
-          if (lname.startsWith('*paper_space')) paperEntities.push(...curBlock.entities);
-          else if (lname.startsWith('*model_space')) entities.push(...curBlock.entities);
+          if (lname.startsWith('*paper_space')) {
+            const suffix = lname.slice('*paper_space'.length);
+            if (curBlock.entities.length) {
+              psBuckets[suffix] = (psBuckets[suffix] || []).concat(curBlock.entities);
+            }
+          } else if (lname.startsWith('*model_space')) entities.push(...curBlock.entities);
           else if (!lname.startsWith('*') && curBlock.entities.length) blocks[curBlock.name] = curBlock;
         }
         curBlock = null;
         i++;
         while (i < pairs.length && pairs[i][0] !== 0) i++;
+        continue;
+      }
+
+      if (section === 'OBJECTS' && code === 0 && val === 'LAYOUT') {
+        const meta = { name: null, order: 0, w: 0, h: 0 };
+        i++;
+        while (i < pairs.length && pairs[i][0] !== 0) {
+          const [c, v] = pairs[i];
+          if (c === 1) meta.name = v;
+          else if (c === 71) meta.order = parseInt(v, 10) || 0;
+          else if (c === 44) meta.w = parseFloat(v) / 25.4;  // PLOTSETTINGS sizes are mm
+          else if (c === 45) meta.h = parseFloat(v) / 25.4;
+          i++;
+        }
+        if (meta.name && meta.name.toLowerCase() !== 'model') layoutMetas.push(meta);
         continue;
       }
 
@@ -346,7 +371,25 @@ const DXF = {
       i++;
     }
 
-    return { entities, paperEntities, layers, blocks };
+    // assemble per-layout paper spaces: bucket order '' (active), '0', '1', …
+    const bucketKeys = Object.keys(psBuckets).sort((a, b) => {
+      if (a === '') return -1;
+      if (b === '') return 1;
+      return (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0);
+    });
+    for (const k of bucketKeys) paperEntities.push(...psBuckets[k]);
+    layoutMetas.sort((a, b) => a.order - b.order);
+    const paperLayouts = bucketKeys.map((k, idx) => {
+      const meta = bucketKeys.length === layoutMetas.length ? layoutMetas[idx] : layoutMetas[idx] || null;
+      return {
+        name: (meta && meta.name) || `Layout${idx + 1}`,
+        w: meta ? meta.w : 0,
+        h: meta ? meta.h : 0,
+        entities: psBuckets[k],
+      };
+    });
+
+    return { entities, paperEntities, layers, blocks, paperLayouts };
   },
 };
 

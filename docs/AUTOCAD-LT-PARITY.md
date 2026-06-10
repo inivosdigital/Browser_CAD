@@ -85,7 +85,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 |---|---|---|---|
 | Layers: on/off, freeze, lock, color, linetype, lineweight, plot flag | ✅ | ✅ visible/lock/color/linetype/lineweight | freeze P3 |
 | Layer states, filters | ✅ | ❌ | — |
-| Blocks: define, insert, redefine | ✅ | ✅ | — |
+| Blocks: define, insert, redefine, **BEDIT in-place editing** | ✅ | ✅ B redefines; BE / double-click edits in place, BC closes | — |
 | Block attributes (ATTDEF), Smart Blocks | ✅ | ❌ | P3 |
 | Groups | ✅ | ❌ | P3 |
 | External references (XREF) | ✅ | ❌ | — |
@@ -121,7 +121,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Drawing compare (DWG Compare) | ✅ | ❌ | — |
 | Count (objects/blocks) | ✅ | ❌ | P3 (easy: count selection by type) |
 | Autosave/recovery | ✅ | ✅ localStorage | — |
-| Templates (DWT) | ✅ | 🟡 via DXF: SAVEAS the .dwt → DXF once, then Import Template (title block → layout, blocks kept) | native DWG is closed |
+| Templates (DWT) | ✅ | ✅ via DXF: each template layout → its own tab at its declared sheet size (LAYOUT objects), custom sizes supported | native DWG is closed |
 
 ## 9. UI & Automation
 
