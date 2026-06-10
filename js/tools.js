@@ -462,8 +462,8 @@ TOOLS.polyline = () => ({
 TOOLS.circle = () => ({
   name: 'circle',
   stage: 'center',
-  c: null, p1: null,
-  start(app) { app.prompt('CIRCLE — Specify center point or [2P]:'); },
+  c: null, p1: null, p2: null,
+  start(app) { app.prompt('CIRCLE — Specify center point or [2P/3P]:'); },
   click(app, pt) {
     if (this.stage === 'center') {
       this.c = pt; app.lastPoint = pt;
@@ -477,6 +477,18 @@ TOOLS.circle = () => ({
       app.prompt('Specify second end of diameter:');
     } else if (this.stage === '2p2') {
       this._make(app, GEO.mid(this.p1, pt), GEO.dist(this.p1, pt) / 2);
+    } else if (this.stage === '3p1') {
+      this.p1 = pt; app.lastPoint = pt;
+      this.stage = '3p2';
+      app.prompt('Specify second point on circle:');
+    } else if (this.stage === '3p2') {
+      this.p2 = pt; app.lastPoint = pt;
+      this.stage = '3p3';
+      app.prompt('Specify third point on circle:');
+    } else if (this.stage === '3p3') {
+      const a = GEO.arc3pt(this.p1, this.p2, pt);
+      if (!a) { app.print('Points are collinear.'); return; }
+      this._make(app, a.c, a.r);
     }
   },
   _make(app, c, r) {
@@ -490,6 +502,11 @@ TOOLS.circle = () => ({
     if (u === '2p' && this.stage === 'center') {
       this.stage = '2p1';
       app.prompt('Specify first end of diameter:');
+      return true;
+    }
+    if (u === '3p' && this.stage === 'center') {
+      this.stage = '3p1';
+      app.prompt('Specify first point on circle:');
       return true;
     }
     if (this.stage === 'radius') {
@@ -506,6 +523,11 @@ TOOLS.circle = () => ({
       RENDER.previewEntity(ctx, app.vp, { type: 'line', a: this.c, b: p });
     } else if (this.stage === '2p2') {
       RENDER.previewEntity(ctx, app.vp, { type: 'circle', c: GEO.mid(this.p1, p), r: GEO.dist(this.p1, p) / 2 });
+    } else if (this.stage === '3p2') {
+      RENDER.previewEntity(ctx, app.vp, { type: 'line', a: this.p1, b: p });
+    } else if (this.stage === '3p3') {
+      const a = GEO.arc3pt(this.p1, this.p2, p);
+      if (a) RENDER.previewEntity(ctx, app.vp, { type: 'circle', c: a.c, r: a.r });
     }
   },
 });
@@ -841,7 +863,7 @@ TOOLS.copy = () => ({
 
 TOOLS.rotate = () => ({
   name: 'rotate', label: 'ROTATE',
-  stage: null, base: null,
+  stage: null, base: null, refAng: 0, refP1: null,
   start(app) { startModify(app, this); },
   begin(app) { this.stage = 'base'; app.prompt('ROTATE — Specify base point:'); },
   _apply(app, ang) {
@@ -857,15 +879,44 @@ TOOLS.rotate = () => ({
     if (this.stage === 'base') {
       this.base = pt; app.lastPoint = pt;
       this.stage = 'angle';
-      app.prompt('Specify rotation angle (degrees) or pick a point:');
+      app.prompt('Specify rotation angle (degrees), pick a point, or [Reference]:');
     } else if (this.stage === 'angle') {
       this._apply(app, GEO.ang(this.base, pt));
+    } else if (this.stage === 'ref1') {
+      this.refP1 = pt; app.lastPoint = pt;
+      this.stage = 'ref2';
+      app.prompt('Specify second point of reference angle:');
+    } else if (this.stage === 'ref2') {
+      this.refAng = GEO.ang(this.refP1, pt);
+      this.stage = 'newang';
+      app.prompt('Specify new angle (degrees or pick a point):');
+    } else if (this.stage === 'newang') {
+      this._apply(app, GEO.ang(this.base, pt) - this.refAng);
     }
   },
   move(app) { if (this.stage === 'acquire') SEL.move(app); },
   up(app) { if (this.stage === 'acquire') SEL.up(app, app.downScreen); },
   input(app, raw) {
     if (this.stage === 'acquire') return acquireInput(app, this, raw);
+    const u = raw.toLowerCase();
+    if (this.stage === 'angle' && (u === 'r' || u === 'reference')) {
+      this.stage = 'ref1';
+      app.prompt('Specify reference angle (degrees) or first point:');
+      return true;
+    }
+    if (this.stage === 'ref1' && raw !== '') {
+      const n = parseFloat(raw);
+      if (!Number.isNaN(n)) {
+        this.refAng = n * Math.PI / 180;
+        this.stage = 'newang';
+        app.prompt('Specify new angle (degrees or pick a point):');
+        return true;
+      }
+    }
+    if (this.stage === 'newang' && raw !== '') {
+      const n = parseFloat(raw);
+      if (!Number.isNaN(n)) { this._apply(app, n * Math.PI / 180 - this.refAng); return true; }
+    }
     if (this.stage === 'angle' && raw !== '') {
       const n = parseFloat(raw);
       if (!Number.isNaN(n)) { this._apply(app, n * Math.PI / 180); return true; }
@@ -874,16 +925,19 @@ TOOLS.rotate = () => ({
     return false;
   },
   preview(ctx, app) {
-    if (this.stage !== 'angle') return;
-    const ang = GEO.ang(this.base, app.pointer.snapped);
-    ghostSelection(ctx, app, ENT.xfRotate(this.base, ang));
-    RENDER.previewEntity(ctx, app.vp, { type: 'line', a: this.base, b: app.pointer.snapped });
+    if (this.stage === 'angle' || this.stage === 'newang') {
+      const ang = GEO.ang(this.base, app.pointer.snapped) - (this.stage === 'newang' ? this.refAng : 0);
+      ghostSelection(ctx, app, ENT.xfRotate(this.base, ang));
+      RENDER.previewEntity(ctx, app.vp, { type: 'line', a: this.base, b: app.pointer.snapped });
+    } else if (this.stage === 'ref2') {
+      RENDER.previewEntity(ctx, app.vp, { type: 'line', a: this.refP1, b: app.pointer.snapped });
+    }
   },
 });
 
 TOOLS.scale = () => ({
   name: 'scale', label: 'SCALE',
-  stage: null, base: null,
+  stage: null, base: null, refLen: 1, refP1: null,
   start(app) { startModify(app, this); },
   begin(app) { this.stage = 'base'; app.prompt('SCALE — Specify base point:'); },
   _apply(app, f) {
@@ -900,15 +954,46 @@ TOOLS.scale = () => ({
     if (this.stage === 'base') {
       this.base = pt; app.lastPoint = pt;
       this.stage = 'factor';
-      app.prompt('Specify scale factor (type a number, or pick: factor = distance to base):');
+      app.prompt('Specify scale factor (number, pick a point, or [Reference]):');
     } else if (this.stage === 'factor') {
       this._apply(app, GEO.dist(this.base, pt));
+    } else if (this.stage === 'ref1') {
+      this.refP1 = pt; app.lastPoint = pt;
+      this.stage = 'ref2';
+      app.prompt('Specify second point of reference length:');
+    } else if (this.stage === 'ref2') {
+      const d = GEO.dist(this.refP1, pt);
+      if (d <= 1e-9) { app.print('Reference length must be positive.'); return; }
+      this.refLen = d;
+      this.stage = 'newlen';
+      app.prompt(`Specify new length <ref ${fmtLen(this.refLen)}>:`);
+    } else if (this.stage === 'newlen') {
+      this._apply(app, GEO.dist(this.base, pt) / this.refLen);
     }
   },
   move(app) { if (this.stage === 'acquire') SEL.move(app); },
   up(app) { if (this.stage === 'acquire') SEL.up(app, app.downScreen); },
   input(app, raw) {
     if (this.stage === 'acquire') return acquireInput(app, this, raw);
+    const u = raw.toLowerCase();
+    if (this.stage === 'factor' && (u === 'r' || u === 'reference')) {
+      this.stage = 'ref1';
+      app.prompt('Specify reference length (number) or first point:');
+      return true;
+    }
+    if (this.stage === 'ref1' && raw !== '') {
+      const n = parseDist(raw);
+      if (n !== null && n > 0) {
+        this.refLen = n;
+        this.stage = 'newlen';
+        app.prompt(`Specify new length <ref ${fmtLen(n)}>:`);
+        return true;
+      }
+    }
+    if (this.stage === 'newlen' && raw !== '') {
+      const n = parseDist(raw);
+      if (n !== null && n > 0) { this._apply(app, n / this.refLen); return true; }
+    }
     if (this.stage === 'factor' && raw !== '') {
       const n = parseFloat(raw);
       if (!Number.isNaN(n)) { this._apply(app, n); return true; }
@@ -917,9 +1002,15 @@ TOOLS.scale = () => ({
     return false;
   },
   preview(ctx, app) {
-    if (this.stage !== 'factor') return;
-    const f = GEO.dist(this.base, app.pointer.snapped);
-    if (f > 1e-9) ghostSelection(ctx, app, ENT.xfScale(this.base, f));
+    if (this.stage === 'factor') {
+      const f = GEO.dist(this.base, app.pointer.snapped);
+      if (f > 1e-9) ghostSelection(ctx, app, ENT.xfScale(this.base, f));
+    } else if (this.stage === 'newlen') {
+      const f = GEO.dist(this.base, app.pointer.snapped) / this.refLen;
+      if (f > 1e-9) ghostSelection(ctx, app, ENT.xfScale(this.base, f));
+    } else if (this.stage === 'ref2') {
+      RENDER.previewEntity(ctx, app.vp, { type: 'line', a: this.refP1, b: app.pointer.snapped });
+    }
   },
 });
 
@@ -2204,6 +2295,56 @@ function makeChainDimTool(name, baseline) {
 TOOLS.dimcontinue = makeChainDimTool('dimcontinue', false);
 TOOLS.dimbaseline = makeChainDimTool('dimbaseline', true);
 
+/* ================= mtext ================= */
+
+TOOLS.mtext = () => ({
+  name: 'mtext',
+  stage: 'c1',
+  c1: null, editing: false,
+  start(app) { app.prompt('MTEXT — Specify first corner of text box:'); },
+  click(app, pt) {
+    if (this.editing) return;
+    if (this.stage === 'c1') {
+      this.c1 = pt; app.lastPoint = pt;
+      this.stage = 'c2';
+      app.prompt('Specify opposite corner:');
+    } else if (this.stage === 'c2') {
+      const width = Math.abs(pt.x - this.c1.x);
+      if (width < 1e-6) { app.print('Box width must be positive.'); return; }
+      const ent = {
+        p: { x: Math.min(this.c1.x, pt.x), y: Math.max(this.c1.y, pt.y) },
+        width,
+        height: app.doc.settings.textHeight,
+        text: '',
+      };
+      this.editing = true;
+      app.prompt('Type text — Ctrl+Enter to place, Esc to cancel:');
+      UI.openMtextEditor(app, ent, (text) => {
+        this.editing = false;
+        if (text !== null && text.trim()) {
+          app.doc.checkpoint();
+          app.doc.add(makeEntity('mtext', {
+            p: ent.p, width: ent.width, height: ent.height, text,
+            layer: app.doc.currentLayer,
+          }));
+        }
+        app.endTool();
+      });
+    }
+  },
+  input(app, raw) { if (raw === '' && !this.editing) { app.endTool(); return true; } return this.editing; },
+  preview(ctx, app) {
+    if (this.stage === 'c2' && !this.editing) {
+      const p = app.pointer.snapped;
+      RENDER.previewEntity(ctx, app.vp, {
+        type: 'polyline',
+        pts: [this.c1, { x: p.x, y: this.c1.y }, p, { x: this.c1.x, y: p.y }],
+        closed: true,
+      });
+    }
+  },
+});
+
 /* ================= command registry ================= */
 
 const COMMANDS = {
@@ -2217,6 +2358,7 @@ const COMMANDS = {
   polygon: { tool: 'polygon', help: 'Draw a regular polygon' },
   point: { tool: 'point', help: 'Place point objects' },
   text: { tool: 'text', help: 'Place single-line text' },
+  mtext: { tool: 'mtext', help: 'Multiline text in a word-wrapped box (double-click to edit)' },
   hatch: { tool: 'hatch', help: 'Hatch a closed boundary (lines/cross/solid)' },
   block: { tool: 'block', help: 'Define a block from a selection' },
   insert: { tool: 'insert', help: 'Insert a block reference' },
@@ -2260,6 +2402,7 @@ const COMMANDS = {
       app.onSelectionChange();
     }, help: 'Select all',
   },
+  dimstyle: { fn: (app) => UI.openDimStyle(app), help: 'Dimension style: text height, arrows, precision' },
   // toggles
   grid: { fn: (app) => { app.doc.settings.grid = !app.doc.settings.grid; app.refreshStatus(); }, help: 'Toggle grid (F7)' },
   snap: { fn: (app) => { app.doc.settings.snapGrid = !app.doc.settings.snapGrid; app.refreshStatus(); }, help: 'Toggle grid snap (F9)' },
@@ -2277,6 +2420,14 @@ const COMMANDS = {
       app.print(`Polar tracking ${app.doc.settings.polar ? 'on' : 'off'} (increment ${app.doc.settings.polarInc || 45}°).`);
       app.refreshStatus();
     }, help: 'Toggle polar tracking (F10)',
+  },
+  otrack: {
+    fn: (app) => {
+      app.doc.settings.otrack = !app.doc.settings.otrack;
+      if (!app.doc.settings.otrack) app.trackAcq = [];
+      app.print(`Object snap tracking ${app.doc.settings.otrack ? 'on' : 'off'} (hover an osnap to acquire a point).`);
+      app.refreshStatus();
+    }, help: 'Toggle object snap tracking (F11)',
   },
   dyn: {
     fn: (app) => {
@@ -2317,6 +2468,7 @@ const ALIASES = {
   tr: 'trim', ex: 'extend', ar: 'array', f: 'fillet', x: 'explode', e: 'erase', del: 'erase', delete: 'erase',
   el: 'ellipse', le: 'leader', lead: 'leader', br: 'break', j: 'join', s: 'stretch', cha: 'chamfer',
   dco: 'dimcontinue', dimcont: 'dimcontinue', dba: 'dimbaseline', dimbase: 'dimbaseline',
+  mt: 'mtext', d: 'dimstyle', dst: 'dimstyle',
   h: 'hatch', bh: 'hatch', b: 'block', i: 'insert',
   p: 'pan', z: 'zoom', ze: 'zoom', re: 'regen', u: 'undo', la: 'layer',
   print: 'plot', pdf: 'plot', un: 'units',

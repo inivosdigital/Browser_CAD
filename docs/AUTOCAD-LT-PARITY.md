@@ -13,7 +13,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 |---|---|---|---|
 | Line | chained segments, Close/Undo options | ✅ | — |
 | Polyline | line + **arc segments**, width, Close/Undo | 🟡 line segments only | P2 arc segments |
-| Circle | center-r, center-d, 2P, **3P, TTR** | 🟡 center-r, 2P | P2 3P |
+| Circle | center-r, center-d, 2P, **3P, TTR** | ✅ center-r, 2P, 3P | TTR P3 |
 | Arc | 11 entry methods | 🟡 3-point, center-start-end | OK for MVP |
 | Rectangle | corner-corner + **dimensions, rotation, fillet/chamfer corners** | 🟡 corner-corner | P3 |
 | Polygon | inscribed/circumscribed/edge | 🟡 inscribed | P3 |
@@ -30,7 +30,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 
 | Feature | LT behavior | BrowserCAD | Priority |
 |---|---|---|---|
-| Move / Copy (multiple) / Rotate (+Reference) / Scale (+Reference) | ✅ | ✅ (no Reference option) | P2 Reference |
+| Move / Copy (multiple) / Rotate (+Reference) / Scale (+Reference) | ✅ | ✅ incl. Reference | — |
 | Mirror (MIRRTEXT) | ✅ | ✅ | — |
 | Offset (+Through, Erase, Layer opts) | ✅ | ✅ basic | — |
 | Trim / Extend (select edges or all; shift-swap) | ✅ | ✅ all-edges mode | P2 shift-swap |
@@ -50,12 +50,12 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Feature | LT behavior | BrowserCAD | Priority |
 |---|---|---|---|
 | Single-line text (TEXT/DTEXT) | ✅ | ✅ | — |
-| Multiline text (MTEXT) w/ formatting | ✅ | ❌ | P2 (basic word-wrap box) |
+| Multiline text (MTEXT) w/ formatting | ✅ | ✅ word-wrap box, in-canvas editor, dbl-click edit | rich formatting P3 |
 | Dim: linear, aligned, radius, diameter, angular | ✅ | ✅ | — |
 | Dim: arc length, ordinate, jogged | ✅ | ❌ | P3 |
 | Continue / Baseline dimensioning (DIMCONT/DIMBASE) | ✅ | ✅ `DCO` / `DBA` | — |
 | Quick dimension (QDIM) | ✅ | ❌ | P3 |
-| **Dimension styles** (DIMSTYLE: arrows, text height, units, precision) | ✅ | 🟡 fixed style; units global toggle | P2 (per-doc style settings) |
+| **Dimension styles** (DIMSTYLE: arrows, text height, units, precision) | ✅ | ✅ `DIMSTYLE`/`D` dialog (text, arrows, ext lines, precision) | named styles P3 |
 | **Imperial/architectural dim display X'-Y"** | via DIMSTYLE units | ✅ **default** | done |
 | Leaders / Multileaders (MLEADER) | ✅ | ✅ simple leader (`LE`) | mleader styles P3 |
 | Tables | ✅ | ❌ | — |
@@ -66,15 +66,15 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 
 | Feature | LT behavior | BrowserCAD | Priority |
 |---|---|---|---|
-| Object snaps | 14 modes; running + override | 🟡 end/mid/center/quad/int/perp | P2 tangent, nearest, extension |
+| Object snaps | 14 modes; running + override | ✅ end/mid/center/quad/int/perp/**tan/near** | extension P3 |
 | Polar tracking (F10) + increments | ✅ | ✅ 45° (setting) | P2 increment UI |
-| **Object snap tracking (F11)** | track along osnap alignment paths | ❌ | P2 |
+| **Object snap tracking (F11)** | track along osnap alignment paths | ✅ hover-acquire + H/V alignment rays | polar-angle rays P3 |
 | Ortho (F8) | ✅ | ✅ | — |
 | Grid + snap (F7/F9), polar snap | ✅ | ✅ | — |
 | **Dynamic input (F12, DYNMODE)** — pointer + dimensional tooltips at cursor; distance/angle shown **before the 2nd click**; typed input feeds the active field | ✅ | ✅ distance<angle readout + direct entry | done |
 | Coordinate entry: abs/rel/polar, direct distance | ✅ | ✅ | — |
 | Architectural units input (3'6", fractions) | ✅ (UNITS) | ✅ | — |
-| Angle override (`<30` locks angle) | ✅ | ❌ | P2 |
+| Angle override (`<30` locks angle) | ✅ | ✅ | — |
 | Selection: window/crossing, fence, lasso, similar | ✅ | 🟡 window/crossing | OK |
 | Selection cycling (overlapping objects) | ✅ | ❌ | P3 |
 | QuickCalc | ✅ | ❌ | — |
@@ -127,7 +127,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 
 | Feature | LT behavior | BrowserCAD | Priority |
 |---|---|---|---|
-| Command line w/ **autocomplete + synonym suggestions** | ✅ | 🟡 aliases, history | P2 autocomplete dropdown |
+| Command line w/ **autocomplete + synonym suggestions** | ✅ | ✅ dropdown w/ aliases + help, Tab/↑↓/Enter | — |
 | Contextual ribbon | ✅ | 🟡 fixed toolbar | — |
 | Tool palettes | ✅ | ❌ | — |
 | Shortcut keys (F-keys, Ctrl) | ✅ | ✅ core set | — |
@@ -139,11 +139,13 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 1. ~~**P1 batch — "daily drafting parity"**~~ ✅ **shipped**: Ellipse · Break · Join ·
    Stretch · Chamfer · Continue/Baseline dimensioning · simple Leader · hatch angle ·
    layer linetypes (dashed/hidden/center/dot) + lineweights · fixed plot scales
-2. **P2 batch — "feel like LT"**: osnap tangent/nearest + object snap tracking ·
-   angle override `<30` · polyline arc segments + PEDIT Join · circle 3P ·
-   rotate/scale Reference · MTEXT basics · dimension style settings panel ·
-   hatch pattern library · command autocomplete · DXF R2000 · paper-space layout
-3. **P3 / later**: everything else marked P3 above.
+2. ~~**P2 batch — "feel like LT"**~~ ✅ **shipped**: osnap tangent/nearest ·
+   object snap tracking (F11) · angle override `<30` · circle 3P ·
+   rotate/scale Reference · MTEXT (in-canvas editor) · dimension style dialog ·
+   command autocomplete
+3. **P2b batch — remaining big rocks**: polyline arc segments + PEDIT Join ·
+   hatch pattern library · DXF R2000 · paper-space layout w/ viewports
+4. **P3 / later**: everything else marked P3 above.
 
 ### Sources
 

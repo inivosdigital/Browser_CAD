@@ -317,6 +317,106 @@ kbd { color: var(--fg1); font: 11px monospace; margin-left: auto; padding-left: 
   border: 1px solid var(--edge);
 }
 
+/* ---------- generic small modal ---------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal[hidden] { display: none; }
+.modal-card {
+  width: min(340px, 92vw);
+  background: var(--bg1);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--edge);
+}
+.modal-body { padding: 10px 14px 14px; }
+.modal-body .prop-row label { flex: 0 0 130px; }
+.modal-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.btn-primary {
+  background: var(--accent-dim);
+  color: #fff;
+  padding: 4px 14px;
+  border-radius: 4px;
+}
+.btn-primary:hover { background: var(--accent); }
+
+/* ---------- command autocomplete ---------- */
+
+#cmdpanel { position: relative; }
+#cmd-suggest {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  min-width: 380px;
+  max-width: 60%;
+  background: var(--bg2);
+  border: 1px solid var(--edge);
+  border-radius: 6px 6px 0 0;
+  box-shadow: 0 -6px 20px rgba(0,0,0,0.45);
+  font: 12px Consolas, monospace;
+  z-index: 40;
+}
+.suggest-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.suggest-item b { color: var(--accent); min-width: 90px; font-weight: 600; }
+.suggest-alias { color: var(--good); min-width: 36px; }
+.suggest-help { color: var(--fg1); overflow: hidden; text-overflow: ellipsis; }
+.suggest-item:hover, .suggest-item.sel { background: var(--accent-dim); }
+.suggest-item.sel .suggest-help, .suggest-item:hover .suggest-help { color: var(--fg0); }
+
+/* ---------- mtext editor overlay ---------- */
+
+#mtext-editor {
+  position: absolute;
+  z-index: 60;
+  background: var(--bg2);
+  border: 1px solid var(--accent-dim);
+  border-radius: 6px;
+  padding: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+#mtext-editor textarea {
+  width: 100%;
+  resize: both;
+  font: 13px "Segoe UI", Arial, sans-serif;
+  background: var(--bg0);
+  color: var(--fg0);
+  border: 1px solid var(--edge);
+  padding: 5px;
+}
+.mtext-bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 5px; }
+.mtext-bar button {
+  font-size: 11px;
+  color: var(--fg1);
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--bg1);
+  border: 1px solid var(--edge);
+}
+.mtext-bar button:hover { color: var(--fg0); background: var(--bg3); }
+
 /* ---------- help modal ---------- */
 
 #help-modal {

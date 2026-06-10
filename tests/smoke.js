@@ -198,6 +198,26 @@ const sd = makeEntity('dim', { dtype: 'linear-h', p1: { x: 0, y: 0 }, p2: { x: 1
 ENT.stretch(sd, { x1: 8, y1: -2, x2: 12, y2: 2 }, { x: 5, y: 0 });
 check('stretch updates dim defpoint', near(ENT.dimValue(sd), 15));
 
+console.log('p2 batch');
+// mtext wrapping
+const mt = makeEntity('mtext', { p: { x: 0, y: 0 }, width: 30, height: 2.5, text: 'THE QUICK BROWN FOX JUMPS' });
+const mls = ENT.mtextLines(mt);
+check('mtext wraps to multiple lines', mls.length >= 2 && mls.every(l => l.length * 1.5 <= 30 + 10));
+check('mtext respects newlines', ENT.mtextLines(makeEntity('mtext', { p: { x: 0, y: 0 }, width: 100, height: 2.5, text: 'A\nB' })).length === 2);
+const mbb = ENT.bbox(mt);
+check('mtext bbox below insertion', near(mbb.y2, 0) && mbb.y1 < -mls.length * 2.5);
+check('mtext hit inside box', ENT.hitTest(mt, { x: 15, y: -3 }, 0.1));
+const mex = ENT.explode(mt);
+check('mtext explodes to text lines', mex.length === mls.length && mex.every(t => t.type === 'text'));
+ENT.stretch(mt, { x1: -1, y1: -1, x2: 1, y2: 1 }, { x: 5, y: 5 });
+check('mtext stretches by insertion point', nearPt(mt.p, { x: 5, y: 5 }));
+// dim precision
+ENT.dimPrecision = 4;
+ENT.units = 'decimal';
+const pdim = makeEntity('dim', { dtype: 'linear-h', p1: { x: 0, y: 0 }, p2: { x: 10.12345, y: 0 }, p3: { x: 5, y: -5 } });
+check('dim precision 4', ENT.dimGeometry(pdim).texts[0].text === '10.1235' || ENT.dimGeometry(pdim).texts[0].text === '10.1234');
+ENT.dimPrecision = 2;
+
 console.log('pdf');
 const { PDF } = require('../js/pdf.js');
 const pdoc = new (require('../js/document.js').CadDocument)();

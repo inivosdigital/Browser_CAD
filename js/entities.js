@@ -5,7 +5,8 @@
                                             radius | diameter | angular
           hatch {boundary:{kind:'poly',pts}|{kind:'circle',c,r}, pattern, spacing, angle}
           insert {name, p, scale, rotation}  (block reference)
-          ellipse {c, rx, ry, rot} | leader {pts, text, height} */
+          ellipse {c, rx, ry, rot} | leader {pts, text, height}
+          mtext {p (top-left), width, text, height}  (word-wrapped multiline) */
 'use strict';
 
 let _entSeq = 1;
@@ -174,6 +175,12 @@ const ENT = {
         GEO.bbAddPt(b, { x: last.x - w - e.height, y: last.y - e.height });
         break;
       }
+      case 'mtext': {
+        const lines = ENT.mtextLines(e);
+        GEO.bbAddPt(b, e.p);
+        GEO.bbAddPt(b, { x: e.p.x + e.width, y: e.p.y - lines.length * ENT.MTEXT_LS * e.height });
+        break;
+      }
     }
     return b;
   },
@@ -223,6 +230,8 @@ const ENT = {
         const last = e.pts[e.pts.length - 1];
         return GEO.dist(p, last) <= Math.max(tol, (e.text ? e.text.length : 1) * e.height * 0.4);
       }
+      case 'mtext':
+        return GEO.ptInRect(p, GEO.bbPad(ENT.bbox(e), tol));
     }
     return false;
   },
@@ -278,6 +287,10 @@ const ENT = {
         break;
       case 'leader':
         for (const p of e.pts) push(p, 'end');
+        break;
+      case 'mtext':
+        push(e.p, 'end');
+        push({ x: e.p.x + e.width, y: e.p.y }, 'end');
         break;
     }
     return out;
@@ -374,6 +387,11 @@ const ENT = {
         e.pts = e.pts.map(xf.pt);
         e.height *= xf.scl;
         break;
+      case 'mtext': // rotation is not supported; box stays axis-aligned
+        e.p = xf.pt(e.p);
+        e.width *= xf.scl;
+        e.height *= xf.scl;
+        break;
     }
     return e;
   },
@@ -437,6 +455,13 @@ const ENT = {
       case 'leader':
         e.pts.forEach((pt, i) => add(pt, p => { e.pts[i] = { ...p }; }));
         break;
+      case 'mtext':
+        add(e.p, p => { e.p = { ...p }; });
+        add({ x: e.p.x + e.width, y: e.p.y }, p => {
+          const w = p.x - e.p.x;
+          if (w > e.height) e.width = w;
+        });
+        break;
     }
     return g;
   },
@@ -453,6 +478,7 @@ const ENT = {
       case 'leader': e.pts = e.pts.map(mv); break;
       case 'point': e.p = mv(e.p); break;
       case 'text': e.p = mv(e.p); break;
+      case 'mtext': e.p = mv(e.p); break;
       case 'insert': e.p = mv(e.p); break;
       case 'dim':
         e.p1 = mv(e.p1); e.p2 = mv(e.p2); e.p3 = mv(e.p3);
@@ -490,7 +516,7 @@ const ENT = {
         if (pts.some(p => GEO.angIn(GEO.ang(ar.c, p), ar.a0, ar.a1, 1e-6))) return true;
       }
     }
-    if (e.type === 'point' || e.type === 'text') return GEO.bbOverlap(rect, b);
+    if (e.type === 'point' || e.type === 'text' || e.type === 'mtext') return GEO.bbOverlap(rect, b);
     return false;
   },
 
@@ -498,10 +524,12 @@ const ENT = {
      dim: { dtype: 'linear-h' | 'linear-v' | 'aligned', p1, p2, p3 }
      p1/p2 = definition points, p3 = dimension line placement point. */
 
+  // dimension style (synced from doc.settings.dimStyle by the app)
   DIM_TEXT: 2.5,
   DIM_ARROW: 2.5,
   DIM_EXT_GAP: 1.0,
   DIM_EXT_OVER: 1.2,
+  dimPrecision: 2,
 
   dimValue(e) {
     switch (e.dtype) {
@@ -527,8 +555,8 @@ const ENT = {
   // display units for dimension text: 'decimal' | 'architectural' (synced from doc settings)
   units: 'decimal',
 
-  formatNum(v) {
-    let s = (+v).toFixed(2);
+  formatNum(v, prec) {
+    let s = (+v).toFixed(prec == null ? 2 : prec);
     if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
     return s;
   },
@@ -537,7 +565,7 @@ const ENT = {
     if (ENT.units === 'architectural' && typeof UNITS !== 'undefined') {
       return UNITS.formatLength(v, 'architectural');
     }
-    return ENT.formatNum(v);
+    return ENT.formatNum(v, ENT.dimPrecision);
   },
 
   // -> { lines:[{a,b}], arcs:[{c,r,a0,a1}], texts:[{p,text,height,rotation}], arrows:[{p,ang}] }
@@ -647,6 +675,32 @@ const ENT = {
     return g;
   },
 
+  /* ---- mtext: deterministic word wrap (approx char width, headless-safe) ---- */
+
+  MTEXT_LS: 1.6, // line spacing factor
+
+  mtextLines(e) {
+    const charW = Math.max(e.height * 0.6, 1e-9);
+    const maxChars = Math.max(1, Math.floor(e.width / charW));
+    const out = [];
+    for (const para of String(e.text || '').split('\n')) {
+      const words = para.split(/\s+/).filter(Boolean);
+      if (!words.length) { out.push(''); continue; }
+      let cur = '';
+      for (let w of words) {
+        if ((cur ? cur.length + 1 + w.length : w.length) <= maxChars) {
+          cur = cur ? cur + ' ' + w : w;
+        } else {
+          if (cur) out.push(cur);
+          while (w.length > maxChars) { out.push(w.slice(0, maxChars)); w = w.slice(maxChars); }
+          cur = w;
+        }
+      }
+      if (cur) out.push(cur);
+    }
+    return out.length ? out : [''];
+  },
+
   /* ---- explode: returns array of replacement entities, or null ---- */
 
   explode(e) {
@@ -667,6 +721,13 @@ const ENT = {
     }
     if (e.type === 'ellipse') {
       return [makeEntity('polyline', { pts: ENT.ellipseSample(e, 96), closed: true, layer: e.layer, color: e.color })];
+    }
+    if (e.type === 'mtext') {
+      const lines = ENT.mtextLines(e);
+      return lines.filter(t => t).map((t, i) => makeEntity('text', {
+        p: { x: e.p.x, y: e.p.y - (i + 1) * ENT.MTEXT_LS * e.height + e.height * 0.45 },
+        text: t, height: e.height, rotation: 0, layer: e.layer, color: e.color,
+      }));
     }
     if (e.type === 'leader') {
       const g = ENT.leaderGeometry(e);
@@ -716,6 +777,7 @@ const ENT = {
       case 'insert': return `Block "${e.name}"`;
       case 'ellipse': return 'Ellipse';
       case 'leader': return 'Leader';
+      case 'mtext': return 'MText';
     }
     return e.type;
   },

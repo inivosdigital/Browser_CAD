@@ -40,6 +40,8 @@
       <button data-cmd="snap">Toggle Grid Snap <kbd>F9</kbd></button>
       <button data-cmd="ortho">Toggle Ortho <kbd>F8</kbd></button>
       <button data-cmd="polar">Toggle Polar Tracking <kbd>F10</kbd></button>
+      <button data-cmd="otrack">Toggle Object Snap Tracking <kbd>F11</kbd></button>
+      <button data-cmd="dimstyle">Dimension Style&hellip;</button>
       <button data-cmd="units">Toggle Units (decimal / feet-inches)</button>
       <button data-cmd="dyn">Toggle Dynamic Input <kbd>F12</kbd></button>
       <button data-cmd="osnap">Toggle Object Snap <kbd>F3</kbd></button>
@@ -81,6 +83,7 @@
 
 <div id="cmdpanel">
   <div id="cmd-history"></div>
+  <div id="cmd-suggest" hidden></div>
   <div id="cmd-row">
     <span id="cmd-prompt">Command:</span>
     <input id="cmd-input" autocomplete="off" spellcheck="false">
@@ -94,6 +97,7 @@
   <button id="tog-snap" class="sb-toggle" title="Grid snap (F9)">SNAP</button>
   <button id="tog-ortho" class="sb-toggle" title="Ortho (F8)">ORTHO</button>
   <button id="tog-polar" class="sb-toggle" title="Polar tracking (F10)">POLAR</button>
+  <button id="tog-otrack" class="sb-toggle" title="Object snap tracking (F11)">OTRACK</button>
   <button id="tog-dyn" class="sb-toggle" title="Dynamic input (F12)">DYN</button>
   <button id="tog-osnap" class="sb-toggle" title="Object snap (F3)">OSNAP</button>
   <span class="spacer"></span>
@@ -101,6 +105,23 @@
   <span class="sb-sep"></span>
   <span id="zoom-level" class="sb-info">100%</span>
 </footer>
+
+<div id="dimstyle-modal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-header">
+      Dimension Style
+      <button id="ds-close" class="icon-btn">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="prop-row"><label>Text height</label><input id="ds-text" type="number" step="any" min="0.1"></div>
+      <div class="prop-row"><label>Arrow size</label><input id="ds-arrow" type="number" step="any" min="0.1"></div>
+      <div class="prop-row"><label>Ext. line gap</label><input id="ds-gap" type="number" step="any" min="0"></div>
+      <div class="prop-row"><label>Ext. overshoot</label><input id="ds-over" type="number" step="any" min="0"></div>
+      <div class="prop-row"><label>Precision (decimals)</label><input id="ds-prec" type="number" step="1" min="0" max="8"></div>
+      <div class="modal-actions"><button id="ds-apply" class="btn-primary">Apply</button></div>
+    </div>
+  </div>
+</div>
 
 <div id="help-modal" hidden>
   <div id="help-card">
