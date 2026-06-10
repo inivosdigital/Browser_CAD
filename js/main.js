@@ -402,12 +402,23 @@ const app = {
           layout.customW = +W.toFixed(2);
           layout.customH = +H.toFixed(2);
         }
-        // keep template coordinates when the content already sits on the sheet;
-        // otherwise center it
+        // keep template coordinates when most content sits on the sheet
+        // (templates often park stray junk far off-sheet); center only when
+        // the bulk of the title block is genuinely off the paper
         const [SW, SH] = UNITS.layoutDims(layout);
-        if (GEO.bbValid(bb) && (bb.x1 < -0.01 || bb.y1 < -0.01 || bb.x2 > SW + 0.01 || bb.y2 > SH + 0.01)) {
-          const xf = ENT.xfTranslate({ x: (SW - cw) / 2 - bb.x1, y: (SH - ch) / 2 - bb.y1 });
-          for (const e of layout.entities) ENT.transform(e, xf);
+        if (GEO.bbValid(bb)) {
+          const margin = 1.5;
+          let inside = 0;
+          for (const e of srcL.entities) {
+            const eb = ENT.bbox(e);
+            if (!GEO.bbValid(eb)) continue;
+            const cx2 = (eb.x1 + eb.x2) / 2, cy2 = (eb.y1 + eb.y2) / 2;
+            if (cx2 > -margin && cx2 < SW + margin && cy2 > -margin && cy2 < SH + margin) inside++;
+          }
+          if (inside / Math.max(1, srcL.entities.length) < 0.6) {
+            const xf = ENT.xfTranslate({ x: (SW - cw) / 2 - bb.x1, y: (SH - ch) / 2 - bb.y1 });
+            for (const e of layout.entities) ENT.transform(e, xf);
+          }
         }
         return layout;
       });

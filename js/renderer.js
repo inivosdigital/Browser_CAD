@@ -77,7 +77,7 @@ const RENDER = {
         break;
       }
       case 'text':
-        RENDER.drawText(ctx, vp, e.p, e.text, e.height, e.rotation || 0, color, 'left');
+        RENDER.drawText(ctx, vp, e.p, e.text, e.height, e.rotation || 0, color, e.align || 'left');
         break;
       case 'dim': {
         const g = ENT.dimGeometry(e);

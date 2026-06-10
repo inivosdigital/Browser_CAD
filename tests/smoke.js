@@ -236,6 +236,27 @@ const sStart = pdfStr.indexOf('stream\n') + 'stream\n'.length;
 const sEnd = pdfStr.indexOf('\nendstream');
 check('pdf stream length correct', lenM && parseInt(lenM[1], 10) === sEnd - sStart);
 
+console.log('dxf template parsing');
+check('cleanText underline toggles', DXF.cleanText('\\LNOTES\\l1. A', true) === 'NOTES1. A');
+check('cleanText unicode escape', DXF.cleanText('10\\U+2076', true) === '10\u2076');
+check('cleanText fraction', DXF.cleanText('\\S1^2;', true) === '1/2');
+check('cleanText font codes + para', DXF.cleanText('{\\fArial|b0;HI}\\PYO', true) === 'HI\nYO');
+check('cleanText %% codes', DXF.cleanText('90%%d %%c12', false) === '90° Ø12');
+// hatch loop walker: edge-type loop of 3 line edges
+const loop = DXF._hatchLoop([
+  [91, '1'], [92, '1'], [93, '3'],
+  [72, '1'], [10, '0'], [20, '0'], [11, '1'], [21, '0'],
+  [72, '1'], [10, '1'], [20, '0'], [11, '1'], [21, '1'],
+  [72, '1'], [10, '1'], [20, '1'], [11, '0'], [21, '0'],
+]);
+check('hatch edge loop -> 3 pts', loop && loop.length === 3 && near(loop[1].x, 1));
+// polyline-type loop
+const ploop = DXF._hatchLoop([
+  [91, '1'], [92, '7'], [72, '0'], [73, '1'], [93, '4'],
+  [10, '0'], [20, '0'], [10, '2'], [20, '0'], [10, '2'], [20, '2'], [10, '0'], [20, '2'],
+]);
+check('hatch polyline loop -> 4 pts', ploop && ploop.length === 4 && near(ploop[2].y, 2));
+
 console.log('document');
 const doc = new CadDocument();
 doc.add(makeEntity('line', { a: { x: 0, y: 0 }, b: { x: 5, y: 5 } }));

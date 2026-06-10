@@ -154,7 +154,8 @@ const ENT = {
       case 'point': GEO.bbAddPt(b, e.p); break;
       case 'text': {
         const w = (e.text ? e.text.length : 1) * e.height * 0.62;
-        const cs = [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: e.height }, { x: 0, y: e.height }];
+        const x0 = e.align === 'center' ? -w / 2 : (e.align === 'right' ? -w : 0);
+        const cs = [{ x: x0, y: 0 }, { x: x0 + w, y: 0 }, { x: x0 + w, y: e.height }, { x: x0, y: e.height }];
         for (const c of cs) GEO.bbAddPt(b, GEO.rotPt(GEO.add(e.p, c), e.p, e.rotation || 0));
         break;
       }
