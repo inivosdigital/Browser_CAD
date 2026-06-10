@@ -193,6 +193,12 @@ const app = {
       }
     }
     app.pointer.snapped = eff;
+    // dynamic input: live distance<angle readout from the tool's base point
+    app.pointer.dyn = null;
+    if (isPointTool && app.anchor && app.doc.settings.dynInput && !app.pointer.track) {
+      const dist = GEO.dist(app.anchor, eff);
+      if (dist > 1e-9) app.pointer.dyn = { dist, ang: GEO.ang(app.anchor, eff) };
+    }
     UI.updateCoords(app);
   },
 
@@ -454,6 +460,7 @@ function initApp() {
     if (key === 'F8') { ev.preventDefault(); app.execCommand('ortho'); return; }
     if (key === 'F9') { ev.preventDefault(); app.execCommand('snap'); return; }
     if (key === 'F10') { ev.preventDefault(); app.execCommand('polar'); return; }
+    if (key === 'F12') { ev.preventDefault(); app.execCommand('dyn'); return; }
 
     if (mod && key.toLowerCase() === 'z' && !ev.shiftKey) { ev.preventDefault(); app.execCommand('undo'); return; }
     if (mod && (key.toLowerCase() === 'y' || (key.toLowerCase() === 'z' && ev.shiftKey))) { ev.preventDefault(); app.execCommand('redo'); return; }

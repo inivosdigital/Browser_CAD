@@ -1711,6 +1711,13 @@ const COMMANDS = {
       app.refreshStatus();
     }, help: 'Toggle polar tracking (F10)',
   },
+  dyn: {
+    fn: (app) => {
+      app.doc.settings.dynInput = !app.doc.settings.dynInput;
+      app.print(`Dynamic input ${app.doc.settings.dynInput ? 'on' : 'off'}.`);
+      app.refreshStatus();
+    }, help: 'Toggle dynamic input readout (F12)',
+  },
   units: {
     fn: (app) => {
       const arch = app.doc.settings.units !== 'architectural';
