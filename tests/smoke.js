@@ -64,6 +64,35 @@ const dg = ENT.dimGeometry(dim);
 check('dim geometry parts', dg.lines.length === 3 && dg.texts.length === 1 && dg.arrows.length === 2);
 check('explode polyline', ENT.explode(pl).length === 2);
 
+console.log('units');
+const { UNITS } = require('../js/units.js');
+global.UNITS = UNITS;
+const cases = [
+  ['42', 42], ['3.5', 3.5], ['-7', -7],
+  ["3'6", 42], ["3'6\"", 42], ["3'-6\"", 42], ["3' 6\"", 42],
+  ["5'", 60], ["3.5'", 42], ['18"', 18], ['6 1/2', 6.5], ['6-1/2"', 6.5],
+  ["3'6 1/2\"", 42.5], ['1/2', 0.5], ["-3'6", -42], ["0'-9\"", 9],
+];
+for (const [input, want] of cases) {
+  const got = UNITS.parseLength(input);
+  check(`parse ${JSON.stringify(input)} -> ${want}`, got !== null && near(got, want));
+}
+for (const bad of ['', 'abc', "'6", "3''", '1/0', '3,5']) {
+  check(`reject ${JSON.stringify(bad)}`, UNITS.parseLength(bad) === null);
+}
+check("format 42 arch", UNITS.formatLength(42, 'architectural') === "3'-6\"");
+check("format 42.5 arch", UNITS.formatLength(42.5, 'architectural') === "3'-6 1/2\"");
+check("format 9 arch", UNITS.formatLength(9, 'architectural') === "0'-9\"");
+check("format -30.25 arch", UNITS.formatLength(-30.25, 'architectural') === "-2'-6 1/4\"");
+check("format rounds to 1/16", UNITS.formatLength(10.04, 'architectural') === "0'-10 1/16\"");
+check('format decimal', UNITS.formatLength(42.5, 'decimal') === '42.5');
+ENT.units = 'architectural';
+const archDim = makeEntity('dim', { dtype: 'linear-h', p1: { x: 0, y: 0 }, p2: { x: 42, y: 0 }, p3: { x: 21, y: -10 } });
+check('dim text in feet-inches', ENT.dimGeometry(archDim).texts[0].text === "3'-6\"");
+const archAng = makeEntity('dim', { dtype: 'angular', p1: { x: 0, y: 0 }, p2: { x: 10, y: 0 }, p3: { x: 0, y: 10 }, p4: { x: 5, y: 5 } });
+check('angular text stays degrees', ENT.dimGeometry(archAng).texts[0].text === '90°');
+ENT.units = 'decimal';
+
 console.log('new entity types');
 // radial / angular dimensions
 const rdim = makeEntity('dim', { dtype: 'radius', p1: { x: 0, y: 0 }, p2: { x: 5, y: 0 }, p3: { x: 12, y: 6 } });
