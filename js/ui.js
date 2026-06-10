@@ -470,14 +470,30 @@ const UI = {
     };
 
     switch (e.type) {
-      case 'line':
+      case 'line': {
         row('Start X', numField(e.a.x, v => { e.a.x = v; }));
         row('Start Y', numField(e.a.y, v => { e.a.y = v; }));
         row('End X', numField(e.b.x, v => { e.b.x = v; }));
         row('End Y', numField(e.b.y, v => { e.b.y = v; }));
-        info('Length', fmt(GEO.dist(e.a, e.b)));
-        info('Angle', fmt(degOf(GEO.ang(e.a, e.b))) + '°');
+        // editable length/angle: the start point stays fixed, the end moves
+        const lenIn = document.createElement('input');
+        lenIn.type = 'text';
+        lenIn.value = fmtLen(GEO.dist(e.a, e.b));
+        lenIn.title = "Accepts 3'6, 18\", 42 …";
+        lenIn.addEventListener('change', () => {
+          const v = UNITS.parseLength(lenIn.value);
+          if (v === null || v <= 0) { lenIn.value = fmtLen(GEO.dist(e.a, e.b)); return; }
+          app.doc.checkpoint();
+          e.b = GEO.polar(e.a, GEO.ang(e.a, e.b), v);
+          app.doc._changed();
+        });
+        row('Length', lenIn);
+        row('Angle °', numField(degOf(GEO.ang(e.a, e.b)), v => {
+          const len = GEO.dist(e.a, e.b);
+          e.b = GEO.polar(e.a, v * Math.PI / 180, len);
+        }));
         break;
+      }
       case 'circle':
         row('Center X', numField(e.c.x, v => { e.c.x = v; }));
         row('Center Y', numField(e.c.y, v => { e.c.y = v; }));
