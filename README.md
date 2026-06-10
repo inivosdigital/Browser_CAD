@@ -85,6 +85,20 @@ from any plain static host — GitHub Pages included.)
   white-paper color mapping
 - Autosave to `localStorage` — reopen the tab and your drawing is still there
 
+**Paper space & sheets**
+- **Layout tabs** (Model / Layout1 / ＋) below the canvas; paper sizes from
+  Letter to ARCH-D with orientation toggle
+- **Viewports** (`MV`): windows into model space at standard scales
+  (`1:48`, `1/4` = 1/4"=1'-0", Fit); dimensions keep their true measurements
+  and plot at the correct paper text size
+- **Annotation scale** (`ANNOSCALE`, status-bar chip): sizes dims/leaders for
+  the target viewport scale, AutoCAD CANNOSCALE-style
+- **Template import** (File → Import Template): export your AutoCAD `.dwt`
+  once as DXF — the title block lands in the layout, block definitions and
+  layers included, sheet size auto-detected
+- **Layout plotting**: PLOT in a layout produces a 1:1 vector PDF of the sheet
+  with viewport contents clipped and scaled
+
 **Viewport**
 - Wheel zoom at cursor, middle-mouse pan, `Z` zoom-extents, adaptive grid,
   HiDPI-crisp rendering

@@ -5,7 +5,10 @@ const DEFAULT_LAYER_COLORS = ['#ffffff', '#ff4444', '#ffdd44', '#44dd44', '#44dd
 
 class CadDocument {
   constructor() {
-    this.entities = [];
+    this.modelEntities = [];
+    // paper-space layouts; entity coords are paper inches, origin bottom-left
+    this.layouts = [{ name: 'Layout1', paper: 'letter', landscape: true, entities: [] }];
+    this.space = 'model'; // 'model' | layout index
     this.blocks = {}; // name -> { name, base:{x,y}, entities:[...] }
     this.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, ltype: 'continuous', lweight: 1 }];
     this.currentLayer = '0';
@@ -30,8 +33,24 @@ class CadDocument {
       chamferD1: 0,
       chamferD2: 0,
       offsetDist: 10,
+      annoScale: 1, // model units per paper inch for annotative sizes (48 = 1/4"=1'-0")
     };
     this.onChange = null; // callback(doc)
+  }
+
+  // `entities` resolves to the active space so every tool works in both spaces
+  get entities() {
+    if (this.space === 'model') return this.modelEntities;
+    const l = this.layouts[this.space];
+    return l ? l.entities : this.modelEntities;
+  }
+  set entities(v) {
+    if (this.space === 'model') this.modelEntities = v;
+    else if (this.layouts[this.space]) this.layouts[this.space].entities = v;
+  }
+
+  activeLayout() {
+    return this.space === 'model' ? null : this.layouts[this.space];
   }
 
   /* ---- layers ---- */
@@ -108,7 +127,8 @@ class CadDocument {
 
   _snapshot() {
     return JSON.stringify({
-      entities: this.entities,
+      model: this.modelEntities,
+      layouts: this.layouts,
       blocks: this.blocks,
       layers: this.layers,
       currentLayer: this.currentLayer,
@@ -117,7 +137,8 @@ class CadDocument {
 
   _restore(snap) {
     const s = JSON.parse(snap);
-    this.entities = s.entities;
+    this.modelEntities = s.model || s.entities || [];
+    if (s.layouts) this.layouts = s.layouts;
     this.blocks = s.blocks || {};
     this.layers = s.layers;
     this.currentLayer = s.currentLayer;
@@ -157,10 +178,11 @@ class CadDocument {
   toJSON() {
     return {
       app: 'BrowserCAD',
-      version: 1,
+      version: 2,
       layers: this.layers,
       currentLayer: this.currentLayer,
-      entities: this.entities,
+      entities: this.modelEntities,
+      layouts: this.layouts,
       blocks: this.blocks,
       settings: this.settings,
     };
@@ -168,7 +190,11 @@ class CadDocument {
 
   loadJSON(data) {
     if (!data || !Array.isArray(data.entities)) throw new Error('Not a BrowserCAD drawing');
-    this.entities = data.entities;
+    this.space = 'model';
+    this.modelEntities = data.entities;
+    this.layouts = (data.layouts && data.layouts.length)
+      ? data.layouts
+      : [{ name: 'Layout1', paper: 'letter', landscape: true, entities: [] }];
     this.blocks = data.blocks || {};
     this.layers = (data.layers && data.layers.length) ? data.layers : [{ name: '0', color: '#ffffff', visible: true, locked: false }];
     if (!this.layer('0')) this.layers.unshift({ name: '0', color: '#ffffff', visible: true, locked: false });
@@ -179,7 +205,8 @@ class CadDocument {
     this.currentLayer = this.layer(data.currentLayer) ? data.currentLayer : '0';
     if (data.settings) Object.assign(this.settings, data.settings);
     let maxId = 0;
-    for (const e of this.entities) maxId = Math.max(maxId, e.id || 0);
+    for (const e of this.modelEntities) maxId = Math.max(maxId, e.id || 0);
+    for (const l of this.layouts) for (const e of l.entities) maxId = Math.max(maxId, e.id || 0);
     for (const b of Object.values(this.blocks)) {
       for (const e of b.entities) maxId = Math.max(maxId, e.id || 0);
     }
@@ -192,7 +219,9 @@ class CadDocument {
   }
 
   clear() {
-    this.entities = [];
+    this.space = 'model';
+    this.modelEntities = [];
+    this.layouts = [{ name: 'Layout1', paper: 'letter', landscape: true, entities: [] }];
     this.blocks = {};
     this.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, ltype: 'continuous', lweight: 1 }];
     this.currentLayer = '0';

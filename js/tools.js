@@ -1697,6 +1697,15 @@ TOOLS.plot = () => ({
   stage: 'area',
   win: null, c1: null, paper: 'a4',
   start(app) {
+    const layout = app.doc.activeLayout();
+    if (layout) {
+      // plotting a layout: the sheet defines area and scale (1:1)
+      const name = app.docName.replace(/\.(json|dxf|pdf)$/i, '') + '-' + layout.name.toLowerCase() + '.pdf';
+      app._download(name, PDF.generateLayout(app.doc, layout), 'application/pdf');
+      app.print(`Plotted ${layout.name} at 1:1 (${layout.paper.toUpperCase()} ${layout.landscape ? 'landscape' : 'portrait'}).`);
+      app.endTool();
+      return;
+    }
     if (!app.doc.entities.length) { app.print('Nothing to plot.'); app.endTool(); return; }
     app.prompt('PLOT — Area [Extents/Window] <E>:');
   },
@@ -2345,6 +2354,121 @@ TOOLS.mtext = () => ({
   },
 });
 
+/* ================= paper space: viewports & annotation scale ================= */
+
+TOOLS.mview = () => ({
+  name: 'mview',
+  stage: 'c1',
+  c1: null, rect: null,
+  start(app) {
+    if (!app.doc.activeLayout()) {
+      app.print('MVIEW works in paper space — switch to a layout tab first.');
+      app.endTool();
+      return;
+    }
+    app.prompt('MVIEW — Specify first corner of viewport (on paper):');
+  },
+  click(app, pt) {
+    if (this.stage === 'c1') {
+      this.c1 = pt; app.lastPoint = pt;
+      this.stage = 'c2';
+      app.prompt('Specify opposite corner:');
+    } else if (this.stage === 'c2') {
+      const r = GEO.rectFromPts(this.c1, pt);
+      if (r.x2 - r.x1 < 0.2 || r.y2 - r.y1 < 0.2) { app.print('Viewport too small.'); return; }
+      this.rect = r;
+      this.stage = 'scale';
+      const def = UNITS.scaleLabel(app.doc.settings.annoScale || 1);
+      app.prompt(`Viewport scale [Fit / 1:n / x/y inches per foot] <${def}>:`);
+    }
+  },
+  input(app, raw) {
+    if (this.stage !== 'scale') {
+      if (raw === '') { app.endTool(); return true; }
+      return false;
+    }
+    const u = raw.toLowerCase();
+    const r = this.rect;
+    const w = r.x2 - r.x1, h = r.y2 - r.y1;
+    let mb = GEO.bbEmpty();
+    for (const e of app.doc.modelEntities) mb = GEO.bbUnion(mb, ENT.bbox(e));
+    const center = GEO.bbValid(mb) ? { x: (mb.x1 + mb.x2) / 2, y: (mb.y1 + mb.y2) / 2 } : { x: 0, y: 0 };
+    let scale; // paper per model
+    if (u === '' ) scale = 1 / (app.doc.settings.annoScale || 1);
+    else if (u === 'f' || u === 'fit') {
+      scale = GEO.bbValid(mb)
+        ? Math.min(w / Math.max(mb.x2 - mb.x1, 1e-9), h / Math.max(mb.y2 - mb.y1, 1e-9)) * 0.95
+        : 1;
+    } else {
+      const n = parseScaleToken(u);
+      if (n === null) { app.print('Enter Fit, 1:n, or a fraction like 1/4.'); return true; }
+      scale = n;
+    }
+    app.doc.checkpoint();
+    app.doc.add(makeEntity('viewport', {
+      p: { x: r.x1, y: r.y1 }, w, h, center, scale, layer: app.doc.currentLayer,
+    }));
+    app.print(`Viewport at ${UNITS.scaleLabel(1 / scale)}.`);
+    app.endTool();
+    return true;
+  },
+  preview(ctx, app) {
+    if (this.stage === 'c2') {
+      const p = app.pointer.snapped;
+      RENDER.previewEntity(ctx, app.vp, {
+        type: 'polyline', pts: [this.c1, { x: p.x, y: this.c1.y }, p, { x: this.c1.x, y: p.y }], closed: true,
+      });
+    } else if (this.stage === 'scale' && this.rect) {
+      RENDER.previewEntity(ctx, app.vp, {
+        type: 'viewport', p: { x: this.rect.x1, y: this.rect.y1 },
+        w: this.rect.x2 - this.rect.x1, h: this.rect.y2 - this.rect.y1,
+        center: { x: 0, y: 0 }, scale: 1,
+      });
+    }
+  },
+});
+
+// "1:48" -> 1/48 paper-per-model, "1/4" -> (1/4)/12, plain "48" -> 1/48
+function parseScaleToken(u) {
+  let m = /^1\s*[:=]\s*(\d+(?:\.\d+)?)$/.exec(u);
+  if (m) return 1 / parseFloat(m[1]);
+  m = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)"?$/.exec(u);
+  if (m) return (parseFloat(m[1]) / parseFloat(m[2])) / 12;
+  m = /^(\d+(?:\.\d+)?)$/.exec(u);
+  if (m && parseFloat(m[1]) > 0) return 1 / parseFloat(m[1]);
+  return null;
+}
+
+TOOLS.annoscale = () => ({
+  name: 'annoscale',
+  start(app) {
+    app.prompt(`ANNOSCALE — current ${UNITS.scaleLabel(app.doc.settings.annoScale || 1)}. New scale [1:1 / 1:n / x/y inches per foot]:`);
+  },
+  input(app, raw) {
+    const u = raw.toLowerCase().trim();
+    if (u === '') { app.endTool(); return true; }
+    let n = null; // model units per paper inch
+    if (u === '1:1' || u === '1') n = 1;
+    else {
+      const sc = parseScaleToken(u);
+      if (sc !== null) n = 1 / sc;
+    }
+    if (n === null || !(n > 0)) { app.print('Enter 1:1, 1:n (e.g. 1:48), or a fraction like 1/4.'); return true; }
+    app.doc.settings.annoScale = n;
+    const ds = app.doc.settings.dimStyle;
+    if (n !== 1 && ds.textHeight > 1) {
+      // style was sized in model units; switch to standard paper sizes (DIMTXT 3/16")
+      ds.textHeight = 0.1875; ds.arrow = 0.1875; ds.extGap = 0.0625; ds.extOver = 0.1875;
+      app.print('Dimension style switched to paper sizes (text 3/16") — adjust via DIMSTYLE.');
+    }
+    app.doc._changed(); // re-syncs annotative sizes
+    app.print(`Annotation scale set to ${UNITS.scaleLabel(n)}. Dim text plots at ${fmt(ds.textHeight)}" on paper.`);
+    app.refreshStatus();
+    app.endTool();
+    return true;
+  },
+});
+
 /* ================= command registry ================= */
 
 const COMMANDS = {
@@ -2390,7 +2514,7 @@ const COMMANDS = {
   erase: { tool: 'erase', help: 'Erase objects' },
   // view
   pan: { tool: 'pan', help: 'Pan (or drag middle mouse anytime)' },
-  zoom: { fn: (app) => { app.vp.zoomExtents(app.doc.bbox()); app.print('Zoom extents.'); }, help: 'Zoom to extents' },
+  zoom: { fn: (app) => { app.vp.zoomExtents(app.activeBBox ? app.activeBBox() : app.doc.bbox()); app.print('Zoom extents.'); }, help: 'Zoom to extents' },
   regen: { fn: (app) => app.requestRender(), help: 'Redraw' },
   // edit
   undo: { fn: (app) => { app.print(app.doc.undo() ? 'Undo.' : 'Nothing to undo.'); app.onSelectionChange(); }, help: 'Undo' },
@@ -2403,6 +2527,16 @@ const COMMANDS = {
     }, help: 'Select all',
   },
   dimstyle: { fn: (app) => UI.openDimStyle(app), help: 'Dimension style: text height, arrows, precision' },
+  annoscale: { tool: 'annoscale', help: 'Set annotation scale (sizes dims for the viewport scale)' },
+  mview: { tool: 'mview', help: 'Create a paper-space viewport (in a layout)' },
+  model: { fn: (app) => app.setSpace('model'), help: 'Switch to model space' },
+  layout: {
+    fn: (app) => {
+      if (app.doc.space === 'model') app.setSpace(0);
+      else app.setSpace((app.doc.space + 1) % app.doc.layouts.length);
+    }, help: 'Switch to (next) paper-space layout',
+  },
+  template: { fn: (app) => app.fileImportTemplate(), help: 'Import an AutoCAD template (DXF) into the current layout' },
   // toggles
   grid: { fn: (app) => { app.doc.settings.grid = !app.doc.settings.grid; app.refreshStatus(); }, help: 'Toggle grid (F7)' },
   snap: { fn: (app) => { app.doc.settings.snapGrid = !app.doc.settings.snapGrid; app.refreshStatus(); }, help: 'Toggle grid snap (F9)' },
@@ -2469,6 +2603,8 @@ const ALIASES = {
   el: 'ellipse', le: 'leader', lead: 'leader', br: 'break', j: 'join', s: 'stretch', cha: 'chamfer',
   dco: 'dimcontinue', dimcont: 'dimcontinue', dba: 'dimbaseline', dimbase: 'dimbaseline',
   mt: 'mtext', d: 'dimstyle', dst: 'dimstyle',
+  mv: 'mview', vports: 'mview', cannoscale: 'annoscale', ansc: 'annoscale',
+  pspace: 'layout', mspace: 'model', ps: 'layout', ms: 'model',
   h: 'hatch', bh: 'hatch', b: 'block', i: 'insert',
   p: 'pan', z: 'zoom', ze: 'zoom', re: 'regen', u: 'undo', la: 'layer',
   print: 'plot', pdf: 'plot', un: 'units',
