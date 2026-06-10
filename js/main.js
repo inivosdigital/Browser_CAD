@@ -61,6 +61,7 @@ const app = {
   },
 
   cancel() {
+    if (app.tool && app.tool.cancelGrip && app.tool.cancelGrip(app)) { app.requestRender(); return; }
     if (app.rubber) { app.rubber = null; app.requestRender(); return; }
     if (app.tool && app.tool.name !== 'select') {
       app.print('*Cancel*');
@@ -155,8 +156,8 @@ const app = {
     app.pointer.raw = app.vp.s2w(screen);
     app.pointer.inside = screen.x >= 0 && screen.y >= 0 && screen.x <= r.width && screen.y <= r.height;
 
-    const isPointTool = app.tool && !['select', 'pan'].includes(app.tool.name) &&
-      !(app.tool.stage === 'acquire');
+    const isPointTool = (app.tool && !['select', 'pan'].includes(app.tool.name) &&
+      !(app.tool.stage === 'acquire')) || !!(app.tool && app.tool.gripDrag);
     let snap = null;
     if (isPointTool) snap = SNAP.find(app.doc, app.vp, screen, app.anchor);
     app.pointer.snap = snap;
@@ -268,6 +269,7 @@ const app = {
 function initApp() {
   app.doc = new CadDocument();
   app.vp = new Viewport();
+  ENT.blockResolver = (name) => app.doc.blocks[name];
   app.canvas = document.getElementById('canvas');
   app.ctx = app.canvas.getContext('2d');
 
@@ -432,14 +434,15 @@ function initApp() {
     if (key === 'Delete' || key === 'Backspace') {
       const t = ev.target;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA');
-      if (typing && t.id === 'cmd-input' && t.value === '' && key === 'Delete' && app.doc.selection.size) {
+      const idle = app.tool && app.tool.name === 'select' && !app.tool.gripDrag;
+      if (idle && typing && t.id === 'cmd-input' && t.value === '' && key === 'Delete' && app.doc.selection.size) {
         app.doc.checkpoint();
         app.doc.remove(app.doc.selection);
         app.print('Selection erased.');
         app.onSelectionChange();
         return;
       }
-      if (!typing && key === 'Delete' && app.doc.selection.size) {
+      if (idle && !typing && key === 'Delete' && app.doc.selection.size) {
         app.doc.checkpoint();
         app.doc.remove(app.doc.selection);
         app.print('Selection erased.');

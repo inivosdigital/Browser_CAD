@@ -313,10 +313,64 @@ const TOOLS = {};
 
 TOOLS.select = () => ({
   name: 'select',
+  gripDrag: null, // { id, idx } while dragging a grip of a selected entity
   start(app) { app.prompt('Command:'); },
-  click(app, pt, ev) { SEL.click(app, ev); },
-  move(app) { SEL.move(app); },
-  up(app) { SEL.up(app, app.downScreen); },
+  click(app, pt, ev) {
+    if (this.gripDrag) {
+      this._applyGrip(app, pt);
+      this._commitGrip(app);
+      return;
+    }
+    // grab a grip of a selected entity if the pickbox is on one
+    if (app.doc.selection.size) {
+      const tol = app.pickTol();
+      for (const e of app.doc.selectedEntities()) {
+        const gs = ENT.grips(e);
+        for (let i = 0; i < gs.length; i++) {
+          if (GEO.dist(gs[i].pt, app.pointer.raw) <= tol) {
+            app.doc.checkpoint();
+            this.gripDrag = { id: e.id, idx: i };
+            app.prompt('Specify new grip position:');
+            return;
+          }
+        }
+      }
+    }
+    SEL.click(app, ev);
+  },
+  _applyGrip(app, pt) {
+    const e = app.doc.get(this.gripDrag.id);
+    if (!e) return;
+    const g = ENT.grips(e)[this.gripDrag.idx];
+    if (g) g.apply(pt);
+  },
+  _commitGrip(app) {
+    this.gripDrag = null;
+    app.doc._changed();
+    app.prompt('Command:');
+  },
+  cancelGrip(app) {
+    if (!this.gripDrag) return false;
+    this.gripDrag = null;
+    app.doc.undo();
+    app.prompt('Command:');
+    return true;
+  },
+  move(app) {
+    if (this.gripDrag) { this._applyGrip(app, app.pointer.snapped); return; }
+    SEL.move(app);
+  },
+  up(app) {
+    if (this.gripDrag) {
+      // drag style: commit on release if the mouse travelled
+      if (app.downScreen) {
+        const d = Math.hypot(app.pointer.screen.x - app.downScreen.x, app.pointer.screen.y - app.downScreen.y);
+        if (d > 6) { this._applyGrip(app, app.pointer.snapped); this._commitGrip(app); }
+      }
+      return;
+    }
+    SEL.up(app, app.downScreen);
+  },
   input(app, raw) { return false; },
 });
 
@@ -760,7 +814,7 @@ TOOLS.copy = () => ({
       const xf = ENT.xfTranslate(GEO.sub(pt, this.base));
       for (const e of app.doc.selectedEntities()) {
         const c = ENT.transformed(e, xf);
-        c.id = makeEntity('line', {}).id; // fresh id
+        c.id = nextEntityId();
         app.doc.add(c);
       }
       this.count++;
@@ -891,7 +945,7 @@ TOOLS.mirror = () => ({
     const sel = app.doc.selectedEntities();
     for (const e of sel) {
       const c = ENT.transformed(e, xf);
-      c.id = makeEntity('line', {}).id;
+      c.id = nextEntityId();
       app.doc.add(c);
     }
     if (erase) app.doc.remove(sel.map(e => e.id));
@@ -1073,6 +1127,521 @@ TOOLS.explode = makeImmediateTool('explode', 'EXPLODE', (app) => {
   app.onSelectionChange();
 });
 
+/* ================= extend ================= */
+
+// candidate params on the infinite line a->b from intersections with other entities
+function lineBoundaryParams(app, selfId, a, b) {
+  const ts = [];
+  for (const other of app.doc.entities) {
+    if (other.id === selfId || !app.doc.visible(other)) continue;
+    const pr = ENT.prims(other);
+    for (const s of pr.segs) {
+      const X = GEO.lineLine(a, b, s[0], s[1]);
+      if (!X) continue;
+      const u = GEO.lineParam(X, s[0], s[1]);
+      if (u >= -1e-7 && u <= 1 + 1e-7) ts.push(GEO.lineParam(X, a, b));
+    }
+    for (const c of pr.circles) {
+      for (const X of GEO.lineCircle(a, b, c.c, c.r)) ts.push(GEO.lineParam(X, a, b));
+    }
+    for (const ar of pr.arcs) {
+      for (const X of GEO.lineCircle(a, b, ar.c, ar.r)) {
+        if (GEO.angIn(GEO.ang(ar.c, X), ar.a0, ar.a1, 1e-6)) ts.push(GEO.lineParam(X, a, b));
+      }
+    }
+  }
+  return ts;
+}
+
+function extendEntity(app, e, clickPt) {
+  const eps = 1e-9;
+
+  if (e.type === 'line') {
+    const end = GEO.segParam(clickPt, e.a, e.b) < 0.5 ? 'a' : 'b';
+    const ts = lineBoundaryParams(app, e.id, e.a, e.b);
+    let best = null;
+    if (end === 'b') for (const t of ts) { if (t > 1 + eps && (best === null || t < best)) best = t; }
+    else for (const t of ts) { if (t < -eps && (best === null || t > best)) best = t; }
+    if (best === null) { app.print('No boundary edge found.'); return false; }
+    app.doc.checkpoint();
+    e[end] = GEO.lerp(e.a, e.b, best);
+    app.doc._changed();
+    return true;
+  }
+
+  if (e.type === 'arc') {
+    const full = makeEntity('circle', { c: e.c, r: e.r });
+    const sweep = GEO.sweep(e.a0, e.a1);
+    const rels = [];
+    for (const other of app.doc.entities) {
+      if (other.id === e.id || !app.doc.visible(other)) continue;
+      for (const p of ENT.intersections(full, other)) {
+        const rel = GEO.normAng(GEO.ang(e.c, p) - e.a0);
+        if (rel > sweep + 1e-6 && rel < Math.PI * 2 - 1e-6) rels.push(rel);
+      }
+    }
+    if (!rels.length) { app.print('No boundary edge found.'); return false; }
+    const relHit = GEO.normAng(GEO.ang(e.c, clickPt) - e.a0);
+    const atEnd = relHit > sweep / 2; // closer to the a1 end of the sweep
+    app.doc.checkpoint();
+    if (atEnd) e.a1 = GEO.normAng(e.a0 + Math.min(...rels));
+    else e.a0 = GEO.normAng(e.a0 + Math.max(...rels));
+    app.doc._changed();
+    return true;
+  }
+
+  if (e.type === 'polyline' && !e.closed && e.pts.length >= 2) {
+    const pts = e.pts;
+    const atStart = GEO.dist(clickPt, pts[0]) < GEO.dist(clickPt, pts[pts.length - 1]);
+    const inner = atStart ? pts[1] : pts[pts.length - 2];
+    const endPt = atStart ? pts[0] : pts[pts.length - 1];
+    const ts = lineBoundaryParams(app, e.id, inner, endPt);
+    let best = null;
+    for (const t of ts) { if (t > 1 + eps && (best === null || t < best)) best = t; }
+    if (best === null) { app.print('No boundary edge found.'); return false; }
+    app.doc.checkpoint();
+    const np = GEO.lerp(inner, endPt, best);
+    if (atStart) pts[0] = np; else pts[pts.length - 1] = np;
+    app.doc._changed();
+    return true;
+  }
+
+  app.print(`Cannot extend a ${e.type}.`);
+  return false;
+}
+
+TOOLS.extend = () => ({
+  name: 'extend',
+  start(app) { app.prompt('EXTEND — Click near the end to extend (all objects are boundaries, Enter to finish):'); },
+  click(app) {
+    const e = SEL.hitAt(app, app.pointer.raw);
+    if (!e) { app.print('No object found.'); return; }
+    extendEntity(app, e, app.pointer.raw);
+  },
+  input(app, raw) { if (raw === '') { app.endTool(); return true; } return false; },
+});
+
+/* ================= array ================= */
+
+TOOLS.array = () => ({
+  name: 'array', label: 'ARRAY',
+  stage: null, mode: null,
+  rows: 2, cols: 2, rsp: 10, csp: 10,
+  center: null, count: 6, fill: 360,
+  start(app) { startModify(app, this); },
+  begin(app) { this.stage = 'type'; app.prompt('ARRAY — Type [Rectangular/Polar] <R>:'); },
+  click(app, pt, ev) {
+    if (this.stage === 'acquire') { acquireClick(app, this, ev); return; }
+    if (this.stage === 'center') {
+      this.center = pt; app.lastPoint = pt;
+      this.stage = 'count';
+      app.prompt('Number of items <6>:');
+    }
+  },
+  move(app) { if (this.stage === 'acquire') SEL.move(app); },
+  up(app) { if (this.stage === 'acquire') SEL.up(app, app.downScreen); },
+  _int(raw, def, min) {
+    if (raw === '') return def;
+    const n = parseInt(raw, 10);
+    return (Number.isNaN(n) || n < min) ? null : n;
+  },
+  _num(raw, def) {
+    if (raw === '') return def;
+    const n = parseFloat(raw);
+    return Number.isNaN(n) ? null : n;
+  },
+  input(app, raw) {
+    if (this.stage === 'acquire') return acquireInput(app, this, raw);
+    const u = raw.toLowerCase();
+    switch (this.stage) {
+      case 'type':
+        if (u === '' || u === 'r' || u === 'rectangular') { this.mode = 'r'; this.stage = 'rows'; app.prompt('Number of rows <2>:'); return true; }
+        if (u === 'p' || u === 'polar') { this.mode = 'p'; this.stage = 'center'; app.prompt('Specify center point of array:'); return true; }
+        app.print('Enter R or P.');
+        return true;
+      case 'rows': {
+        const n = this._int(raw, 2, 1);
+        if (n === null) { app.print('Enter a whole number >= 1.'); return true; }
+        this.rows = n; this.stage = 'cols'; app.prompt('Number of columns <2>:');
+        return true;
+      }
+      case 'cols': {
+        const n = this._int(raw, 2, 1);
+        if (n === null) { app.print('Enter a whole number >= 1.'); return true; }
+        if (this.rows * n < 2) { app.print('Array must have more than one item.'); return true; }
+        this.cols = n; this.stage = 'rsp'; app.prompt('Distance between rows <10>:');
+        return true;
+      }
+      case 'rsp': {
+        const n = this._num(raw, 10);
+        if (n === null) { app.print('Enter a number.'); return true; }
+        this.rsp = n; this.stage = 'csp'; app.prompt('Distance between columns <10>:');
+        return true;
+      }
+      case 'csp': {
+        const n = this._num(raw, 10);
+        if (n === null) { app.print('Enter a number.'); return true; }
+        this.csp = n;
+        this._applyRect(app);
+        return true;
+      }
+      case 'count': {
+        const n = this._int(raw, 6, 2);
+        if (n === null) { app.print('Enter a whole number >= 2.'); return true; }
+        this.count = n; this.stage = 'fill'; app.prompt('Angle to fill (degrees, CCW) <360>:');
+        return true;
+      }
+      case 'fill': {
+        const n = this._num(raw, 360);
+        if (n === null || n === 0) { app.print('Enter a non-zero angle.'); return true; }
+        this.fill = n;
+        this._applyPolar(app);
+        return true;
+      }
+    }
+    if (raw === '') { app.endTool(); return true; }
+    return false;
+  },
+  _applyRect(app) {
+    const sel = app.doc.selectedEntities();
+    app.doc.checkpoint();
+    let made = 0;
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        if (r === 0 && c === 0) continue;
+        const xf = ENT.xfTranslate({ x: c * this.csp, y: r * this.rsp });
+        for (const e of sel) {
+          const cl = ENT.transformed(e, xf);
+          cl.id = nextEntityId();
+          app.doc.add(cl);
+          made++;
+        }
+      }
+    }
+    app.print(`Rectangular array: ${made} object(s) created.`);
+    app.endTool();
+  },
+  _applyPolar(app) {
+    const sel = app.doc.selectedEntities();
+    const full = Math.abs(Math.abs(this.fill) - 360) < 1e-9;
+    const step = (full ? this.fill / this.count : this.fill / (this.count - 1)) * Math.PI / 180;
+    app.doc.checkpoint();
+    let made = 0;
+    for (let i = 1; i < this.count; i++) {
+      const xf = ENT.xfRotate(this.center, step * i);
+      for (const e of sel) {
+        const cl = ENT.transformed(e, xf);
+        cl.id = nextEntityId();
+        app.doc.add(cl);
+        made++;
+      }
+    }
+    app.print(`Polar array: ${made} object(s) created.`);
+    app.endTool();
+  },
+});
+
+/* ================= hatch ================= */
+
+TOOLS.hatch = () => ({
+  name: 'hatch',
+  stage: 'pick',
+  boundary: null, pattern: 'lines', spacing: 5,
+  start(app) { app.prompt('HATCH — Select a closed boundary (circle or closed polyline):'); },
+  click(app) {
+    if (this.stage !== 'pick') return;
+    const e = SEL.hitAt(app, app.pointer.raw);
+    if (!e) { app.print('No object found.'); return; }
+    if (e.type === 'circle') this.boundary = { kind: 'circle', c: { ...e.c }, r: e.r };
+    else if (e.type === 'polyline' && e.closed && e.pts.length > 2) this.boundary = { kind: 'poly', pts: e.pts.map(p => ({ ...p })) };
+    else { app.print('Boundary must be a circle or a closed polyline.'); return; }
+    this.stage = 'pattern';
+    app.prompt('Pattern [Lines/Cross/Solid] <Lines>:');
+  },
+  input(app, raw) {
+    const u = raw.toLowerCase();
+    if (this.stage === 'pattern') {
+      if (u === '' || u === 'l' || u === 'lines') this.pattern = 'lines';
+      else if (u === 'c' || u === 'cross') this.pattern = 'cross';
+      else if (u === 's' || u === 'solid') this.pattern = 'solid';
+      else { app.print('Enter L, C, or S.'); return true; }
+      if (this.pattern === 'solid') { this._make(app); return true; }
+      this.stage = 'spacing';
+      app.prompt('Line spacing <5>:');
+      return true;
+    }
+    if (this.stage === 'spacing') {
+      if (raw !== '') {
+        const n = parseFloat(raw);
+        if (Number.isNaN(n) || n <= 0) { app.print('Enter a positive number.'); return true; }
+        this.spacing = n;
+      }
+      this._make(app);
+      return true;
+    }
+    if (raw === '') { app.endTool(); return true; }
+    return false;
+  },
+  _make(app) {
+    app.doc.checkpoint();
+    app.doc.add(makeEntity('hatch', {
+      boundary: this.boundary, pattern: this.pattern, spacing: this.spacing,
+      angle: Math.PI / 4, layer: app.doc.currentLayer,
+    }));
+    app.endTool();
+  },
+});
+
+/* ================= blocks ================= */
+
+TOOLS.block = () => ({
+  name: 'block', label: 'BLOCK',
+  stage: null, bname: null, rawInput: false,
+  start(app) { startModify(app, this); },
+  begin(app) { this.stage = 'name'; this.rawInput = true; app.prompt('BLOCK — Enter block name:'); },
+  click(app, pt, ev) {
+    if (this.stage === 'acquire') { acquireClick(app, this, ev); return; }
+    if (this.stage === 'base') {
+      const sel = app.doc.selectedEntities();
+      app.doc.checkpoint();
+      app.doc.blocks[this.bname] = { name: this.bname, base: { ...pt }, entities: sel.map(e => ENT.clone(e)) };
+      app.doc.remove(sel.map(e => e.id));
+      app.doc.add(makeEntity('insert', { name: this.bname, p: { ...pt }, scale: 1, rotation: 0, layer: app.doc.currentLayer }));
+      app.print(`Block "${this.bname}" defined from ${sel.length} object(s).`);
+      app.onSelectionChange();
+      app.endTool();
+    }
+  },
+  move(app) { if (this.stage === 'acquire') SEL.move(app); },
+  up(app) { if (this.stage === 'acquire') SEL.up(app, app.downScreen); },
+  input(app, raw) {
+    if (this.stage === 'acquire') return acquireInput(app, this, raw);
+    if (this.stage === 'name') {
+      const name = raw.trim();
+      if (!name) { app.print('A name is required.'); return true; }
+      if (app.doc.blocks[name]) { app.print(`Block "${name}" already exists.`); return true; }
+      this.bname = name;
+      this.rawInput = false;
+      this.stage = 'base';
+      app.prompt('Specify base point:');
+      return true;
+    }
+    if (raw === '') { app.endTool(); return true; }
+    return false;
+  },
+});
+
+TOOLS.insert = () => ({
+  name: 'insert',
+  stage: 'name', bname: null, p: null, scale: 1,
+  rawInput: true,
+  start(app) {
+    const names = Object.keys(app.doc.blocks);
+    if (!names.length) {
+      app.print('No blocks defined yet — use BLOCK to create one from a selection.');
+      app.endTool();
+      return;
+    }
+    app.prompt(`INSERT — Block name [${names.join(', ')}]${names.length === 1 ? ` <${names[0]}>` : ''}:`);
+  },
+  click(app, pt) {
+    if (this.stage === 'point') {
+      this.p = pt; app.lastPoint = pt;
+      this.stage = 'scale';
+      app.prompt('Scale <1>:');
+    }
+  },
+  input(app, raw) {
+    if (this.stage === 'name') {
+      const names = Object.keys(app.doc.blocks);
+      let name = raw.trim();
+      if (!name && names.length === 1) name = names[0];
+      if (!app.doc.blocks[name]) { app.print(`Unknown block "${name}". Available: ${names.join(', ')}`); return true; }
+      this.bname = name;
+      this.rawInput = false;
+      this.stage = 'point';
+      app.prompt('Specify insertion point:');
+      return true;
+    }
+    if (this.stage === 'scale') {
+      let s = 1;
+      if (raw !== '') {
+        s = parseFloat(raw);
+        if (Number.isNaN(s) || s <= 0) { app.print('Enter a positive number.'); return true; }
+      }
+      this.scale = s;
+      this.stage = 'rot';
+      app.prompt('Rotation (degrees) <0>:');
+      return true;
+    }
+    if (this.stage === 'rot') {
+      let r = 0;
+      if (raw !== '') {
+        r = parseFloat(raw);
+        if (Number.isNaN(r)) { app.print('Enter a number.'); return true; }
+      }
+      app.doc.checkpoint();
+      app.doc.add(makeEntity('insert', {
+        name: this.bname, p: { ...this.p }, scale: this.scale, rotation: r * Math.PI / 180,
+        layer: app.doc.currentLayer,
+      }));
+      app.endTool();
+      return true;
+    }
+    if (raw === '') { app.endTool(); return true; }
+    return false;
+  },
+  preview(ctx, app) {
+    if (this.stage === 'point' && this.bname) {
+      RENDER.ghostEntity(ctx, app.vp, { type: 'insert', name: this.bname, p: app.pointer.snapped, scale: 1, rotation: 0 });
+    }
+  },
+});
+
+/* ================= radial & angular dimensions ================= */
+
+function makeRadialDimTool(name, diameter) {
+  return () => ({
+    name,
+    stage: 'pick',
+    c: null, r: 0,
+    start(app) { app.prompt(`${name.toUpperCase()} — Select a circle or arc:`); },
+    click(app, pt) {
+      if (this.stage === 'pick') {
+        const e = SEL.hitAt(app, app.pointer.raw);
+        if (!e || (e.type !== 'circle' && e.type !== 'arc')) { app.print('Select a circle or arc.'); return; }
+        this.c = { ...e.c };
+        this.r = e.r;
+        this.stage = 'place';
+        app.prompt('Specify text location:');
+      } else {
+        const a = GEO.ang(this.c, pt);
+        app.doc.checkpoint();
+        app.doc.add(makeEntity('dim', {
+          dtype: diameter ? 'diameter' : 'radius',
+          p1: { ...this.c }, p2: GEO.polar(this.c, a, this.r), p3: { ...pt },
+          layer: app.doc.currentLayer,
+        }));
+        app.endTool();
+      }
+    },
+    input(app, raw) { if (raw === '') { app.endTool(); return true; } return false; },
+    preview(ctx, app) {
+      if (this.stage !== 'place') return;
+      const p = app.pointer.snapped;
+      const a = GEO.ang(this.c, p);
+      RENDER.previewEntity(ctx, app.vp, {
+        type: 'dim', dtype: diameter ? 'diameter' : 'radius',
+        p1: this.c, p2: GEO.polar(this.c, a, this.r), p3: p,
+      });
+    },
+  });
+}
+TOOLS.dimradius = makeRadialDimTool('dimradius', false);
+TOOLS.dimdiameter = makeRadialDimTool('dimdiameter', true);
+
+TOOLS.dimangular = () => ({
+  name: 'dimangular',
+  stage: 'first',
+  vertex: null, rayA: null, rayB: null,
+  start(app) { app.prompt('DIMANGULAR — Select first line:'); },
+  click(app, pt) {
+    if (this.stage === 'place') {
+      app.doc.checkpoint();
+      app.doc.add(makeEntity('dim', {
+        dtype: 'angular',
+        p1: { ...this.vertex }, p2: { ...this.rayA }, p3: { ...this.rayB }, p4: { ...pt },
+        layer: app.doc.currentLayer,
+      }));
+      app.endTool();
+      return;
+    }
+    const e = SEL.hitAt(app, app.pointer.raw);
+    if (!e || e.type !== 'line') { app.print('Select a line.'); return; }
+    if (this.stage === 'first') {
+      this.l1 = e;
+      this.pick1 = { ...app.pointer.raw };
+      this.stage = 'second';
+      app.prompt('Select second line:');
+    } else if (this.stage === 'second') {
+      if (e.id === this.l1.id) { app.print('Select a different line.'); return; }
+      const X = GEO.lineLine(this.l1.a, this.l1.b, e.a, e.b);
+      if (!X) { app.print('Lines are parallel.'); return; }
+      const rayPt = (l, pick) => GEO.add(l.a, GEO.mul(GEO.sub(l.b, l.a), GEO.lineParam(pick, l.a, l.b)));
+      this.vertex = X;
+      this.rayA = rayPt(this.l1, this.pick1);
+      this.rayB = rayPt(e, app.pointer.raw);
+      this.stage = 'place';
+      app.prompt('Specify dimension arc location:');
+    }
+  },
+  input(app, raw) { if (raw === '') { app.endTool(); return true; } return false; },
+  preview(ctx, app) {
+    if (this.stage !== 'place') return;
+    RENDER.previewEntity(ctx, app.vp, {
+      type: 'dim', dtype: 'angular',
+      p1: this.vertex, p2: this.rayA, p3: this.rayB, p4: app.pointer.snapped,
+    });
+  },
+});
+
+/* ================= plot to PDF ================= */
+
+TOOLS.plot = () => ({
+  name: 'plot',
+  stage: 'area',
+  win: null, c1: null,
+  start(app) {
+    if (!app.doc.entities.length) { app.print('Nothing to plot.'); app.endTool(); return; }
+    app.prompt('PLOT — Area [Extents/Window] <E>:');
+  },
+  click(app, pt) {
+    if (this.stage === 'w1') {
+      this.c1 = pt; app.lastPoint = pt;
+      this.stage = 'w2';
+      app.prompt('Specify opposite corner:');
+    } else if (this.stage === 'w2') {
+      this.win = GEO.rectFromPts(this.c1, pt);
+      this.stage = 'paper';
+      app.prompt('Paper size [A4/A3/Letter] <A4>:');
+    }
+  },
+  input(app, raw) {
+    const u = raw.toLowerCase();
+    if (this.stage === 'area') {
+      if (u === '' || u === 'e' || u === 'extents') { this.win = null; this.stage = 'paper'; app.prompt('Paper size [A4/A3/Letter] <A4>:'); return true; }
+      if (u === 'w' || u === 'window') { this.stage = 'w1'; app.prompt('Specify first corner of plot window:'); return true; }
+      app.print('Enter E or W.');
+      return true;
+    }
+    if (this.stage === 'paper') {
+      let paper = 'a4';
+      if (u === 'a3') paper = 'a3';
+      else if (u === 'letter' || u === 'l') paper = 'letter';
+      else if (u !== '' && u !== 'a4') { app.print('Enter A4, A3, or Letter.'); return true; }
+      const rect = this.win || app.doc.bbox();
+      if (!GEO.bbValid(rect)) { app.print('Nothing to plot.'); app.endTool(); return true; }
+      const name = app.docName.replace(/\.(json|dxf|pdf)$/i, '') + '.pdf';
+      app._download(name, PDF.generate(app.doc, rect, paper), 'application/pdf');
+      app.print(`Plotted to ${name} (${paper.toUpperCase()}).`);
+      app.endTool();
+      return true;
+    }
+    if (raw === '') { app.endTool(); return true; }
+    return false;
+  },
+  preview(ctx, app) {
+    if (this.stage === 'w2') {
+      const p = app.pointer.snapped;
+      RENDER.previewEntity(ctx, app.vp, {
+        type: 'polyline',
+        pts: [this.c1, { x: p.x, y: this.c1.y }, p, { x: this.c1.x, y: p.y }],
+        closed: true,
+      });
+    }
+  },
+});
+
 /* ================= command registry ================= */
 
 const COMMANDS = {
@@ -1085,8 +1654,14 @@ const COMMANDS = {
   polygon: { tool: 'polygon', help: 'Draw a regular polygon' },
   point: { tool: 'point', help: 'Place point objects' },
   text: { tool: 'text', help: 'Place single-line text' },
+  hatch: { tool: 'hatch', help: 'Hatch a closed boundary (lines/cross/solid)' },
+  block: { tool: 'block', help: 'Define a block from a selection' },
+  insert: { tool: 'insert', help: 'Insert a block reference' },
   dimlinear: { tool: 'dimlinear', help: 'Linear (horizontal/vertical) dimension' },
   dimaligned: { tool: 'dimaligned', help: 'Aligned dimension' },
+  dimradius: { tool: 'dimradius', help: 'Radius dimension for circle/arc' },
+  dimdiameter: { tool: 'dimdiameter', help: 'Diameter dimension for circle/arc' },
+  dimangular: { tool: 'dimangular', help: 'Angular dimension between two lines' },
   dist: { tool: 'dist', help: 'Measure distance between two points' },
   // modify
   move: { tool: 'move', help: 'Move selection' },
@@ -1096,6 +1671,8 @@ const COMMANDS = {
   mirror: { tool: 'mirror', help: 'Mirror selection' },
   offset: { tool: 'offset', help: 'Offset line/circle/arc/polyline' },
   trim: { tool: 'trim', help: 'Trim at intersections' },
+  extend: { tool: 'extend', help: 'Extend to the nearest boundary edge' },
+  array: { tool: 'array', help: 'Rectangular or polar array' },
   fillet: { tool: 'fillet', help: 'Fillet two lines (radius or corner)' },
   explode: { tool: 'explode', help: 'Explode polylines/dimensions' },
   erase: { tool: 'erase', help: 'Erase objects' },
@@ -1123,6 +1700,7 @@ const COMMANDS = {
   open: { fn: (app) => app.fileOpen(), help: 'Open .json or .dxf' },
   save: { fn: (app) => app.fileSave(), help: 'Save drawing (.json)' },
   dxfout: { fn: (app) => app.fileExportDxf(), help: 'Export DXF (R12)' },
+  plot: { tool: 'plot', help: 'Plot to a vector PDF' },
   layer: { fn: (app) => app.print('Use the Layers panel on the right to manage layers.'), help: 'Layers info' },
   help: { fn: (app) => app.showHelp(), help: 'Show command reference (F1)' },
 };
@@ -1130,10 +1708,13 @@ const COMMANDS = {
 const ALIASES = {
   l: 'line', pl: 'pline', c: 'circle', a: 'arc', rec: 'rectang', rect: 'rectang', rectangle: 'rectang',
   pol: 'polygon', po: 'point', t: 'text', dt: 'text', dli: 'dimlinear', dimlin: 'dimlinear',
-  dal: 'dimaligned', dima: 'dimaligned', di: 'dist',
+  dal: 'dimaligned', dima: 'dimaligned', dra: 'dimradius', dimrad: 'dimradius',
+  ddi: 'dimdiameter', dan: 'dimangular', dimang: 'dimangular', di: 'dist',
   m: 'move', co: 'copy', cp: 'copy', ro: 'rotate', sc: 'scale', mi: 'mirror', o: 'offset',
-  tr: 'trim', f: 'fillet', x: 'explode', e: 'erase', del: 'erase', delete: 'erase',
+  tr: 'trim', ex: 'extend', ar: 'array', f: 'fillet', x: 'explode', e: 'erase', del: 'erase', delete: 'erase',
+  h: 'hatch', bh: 'hatch', b: 'block', i: 'insert',
   p: 'pan', z: 'zoom', ze: 'zoom', re: 'regen', u: 'undo', la: 'layer',
+  print: 'plot', pdf: 'plot',
   '?': 'help', os: 'osnap', or: 'ortho',
 };
 

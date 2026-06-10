@@ -24,13 +24,18 @@ from any plain static host — GitHub Pages included.)
 **Drafting**
 - Line, Polyline, Circle (center-radius / 2P), Arc (3-point / center), Rectangle,
   Polygon, Point, single-line Text
-- Linear (horizontal/vertical) and aligned dimensions with arrowheads and live
-  measured values; `DIST` measuring tool
+- Hatching of closed boundaries (diagonal lines, crosshatch, or solid fill)
+- Blocks: define a block from a selection (`BLOCK`/`B`), insert references with
+  scale + rotation (`INSERT`/`I`), explode back to geometry
+- Linear (horizontal/vertical), aligned, **radius, diameter, and angular**
+  dimensions with arrowheads and live measured values; `DIST` measuring tool
 
 **Editing**
 - Move, Copy (repeating), Rotate, Scale, Mirror, Offset (line/circle/arc/polyline),
-  Trim (all objects act as cutting edges), Fillet (radius or sharp corner),
-  Explode, Erase
+  Trim (all objects act as cutting edges), **Extend** (to the nearest boundary),
+  Fillet (radius or sharp corner), **Array** (rectangular and polar), Explode, Erase
+- **Grip editing**: drag the blue grips of any selected entity — endpoints,
+  midpoints, centers, quadrants, vertices — with object snaps active
 - Unlimited-ish undo/redo (snapshot based, Ctrl+Z / Ctrl+Y)
 - Properties panel for editing geometry, layer, and color of the selection
 
@@ -47,10 +52,13 @@ from any plain static host — GitHub Pages included.)
 
 **Organization & files**
 - Layers: color, show/hide, lock, current layer — entity colors default to ByLayer
-- Save / open native `.json` drawings
+- Save / open native `.json` drawings (blocks included)
 - **DXF R12 export** (LINE, CIRCLE, ARC, POLYLINE, POINT, TEXT, layer table;
-  dimensions are exploded for compatibility) — opens in AutoCAD, LibreCAD, QCAD…
+  dimensions/hatches/blocks are exploded for compatibility) — opens in AutoCAD,
+  LibreCAD, QCAD…
 - **DXF import** (R12 + LWPOLYLINE, TEXT/MTEXT, layers)
+- **Plot to PDF** (`PLOT`): true vector PDF output — extents or window area,
+  A4/A3/Letter with auto-orientation, white-paper color mapping
 - Autosave to `localStorage` — reopen the tab and your drawing is still there
 
 **Viewport**
@@ -80,6 +88,7 @@ js/viewport.js      world(Y-up) <-> screen mapping, zoom/pan
 js/snap.js          OSNAP / grid snap / ortho resolution
 js/renderer.js      canvas drawing: grid, entities, previews, markers
 js/dxf.js           DXF R12 writer + tolerant reader           (headless)
+js/pdf.js           minimal vector PDF writer for plotting     (headless)
 js/tools.js         tool state machines + command registry
 js/ui.js            toolbar, menus, layers/properties panels, help
 js/main.js          app object, input routing, command line, file I/O
@@ -102,8 +111,8 @@ round-trip, and a full DXF export→import round-trip.
 
 ## Roadmap ideas
 
-- Extend, Array, Break; grips editing; polar tracking
-- Radius/diameter/angular dimensions; dimension styles
-- Ellipses, splines, hatches, blocks
-- Linetypes and lineweights; print/PDF (paper space)
-- Closed-polyline trim
+- Break, Stretch, Lengthen; polar tracking; dimension styles
+- Ellipses, splines, leaders/multileaders
+- More hatch patterns; associative hatches and dimensions
+- Linetypes and lineweights; paper-space layouts with viewports
+- Closed-polyline trim; true mirrored block references (negative scale)

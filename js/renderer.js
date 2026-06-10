@@ -77,13 +77,77 @@ const RENDER = {
           const a = vp.w2s(l.a), b = vp.w2s(l.b);
           ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
         }
+        for (const a of g.arcs) {
+          const c = vp.w2s(a.c);
+          ctx.moveTo(c.x + Math.cos(-a.a0) * a.r * vp.scale, c.y + Math.sin(-a.a0) * a.r * vp.scale);
+          ctx.arc(c.x, c.y, a.r * vp.scale, -a.a0, -a.a1, true);
+        }
         ctx.stroke();
         for (const ar of g.arrows) RENDER.drawArrow(ctx, vp, ar.p, ar.ang, color);
-        for (const t of g.texts) RENDER.drawText(ctx, vp, t.p, t.text, t.height, t.rotation, color, 'center');
+        for (const t of g.texts) RENDER.drawText(ctx, vp, t.p, t.text, t.height, t.rotation, color, t.align || 'center');
         break;
       }
+      case 'hatch':
+        RENDER.drawHatch(ctx, vp, e, color, lineWidth, dash);
+        break;
+      case 'insert':
+        for (const ch of ENT.resolvedChildren(e)) {
+          RENDER.drawEntity(ctx, vp, ch, color, lineWidth, dash);
+        }
+        break;
     }
     ctx.setLineDash([]);
+  },
+
+  drawHatch(ctx, vp, e, color, lineWidth, dash) {
+    const b = e.boundary;
+    const path = new Path2D();
+    if (b.kind === 'circle') {
+      const c = vp.w2s(b.c);
+      path.arc(c.x, c.y, b.r * vp.scale, 0, Math.PI * 2);
+    } else {
+      const p0 = vp.w2s(b.pts[0]);
+      path.moveTo(p0.x, p0.y);
+      for (let i = 1; i < b.pts.length; i++) {
+        const p = vp.w2s(b.pts[i]);
+        path.lineTo(p.x, p.y);
+      }
+      path.closePath();
+    }
+    if (e.pattern === 'solid') {
+      ctx.save();
+      ctx.globalAlpha *= 0.8;
+      ctx.fill(path);
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.clip(path);
+      const bb = ENT.bbox(e);
+      const ang = e.angle == null ? Math.PI / 4 : e.angle;
+      const spacing = Math.max(e.spacing || 5, (bb.x2 - bb.x1 + bb.y2 - bb.y1) / 2000);
+      const cx = (bb.x1 + bb.x2) / 2, cy = (bb.y1 + bb.y2) / 2;
+      const half = GEO.dist({ x: bb.x1, y: bb.y1 }, { x: bb.x2, y: bb.y2 }) / 2 + spacing;
+      const dirs = e.pattern === 'cross' ? [ang, ang + Math.PI / 2] : [ang];
+      ctx.lineWidth = Math.max(0.75, lineWidth * 0.6);
+      ctx.beginPath();
+      for (const d of dirs) {
+        const u = { x: Math.cos(d), y: Math.sin(d) };
+        const n = { x: -u.y, y: u.x };
+        const count = Math.ceil(half / spacing);
+        for (let i = -count; i <= count; i++) {
+          const base = { x: cx + n.x * i * spacing, y: cy + n.y * i * spacing };
+          const a = vp.w2s({ x: base.x - u.x * half, y: base.y - u.y * half });
+          const b2 = vp.w2s({ x: base.x + u.x * half, y: base.y + u.y * half });
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b2.x, b2.y);
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    // boundary outline
+    ctx.lineWidth = lineWidth || 1.4;
+    ctx.stroke(path);
   },
 
   drawText(ctx, vp, p, text, height, rotation, color, align) {
@@ -275,10 +339,12 @@ const RENDER = {
 
   drawGrips(ctx, vp, e) {
     ctx.fillStyle = '#2f7fd6';
-    for (const s of ENT.snapPoints(e)) {
-      if (s.kind !== 'end' && s.kind !== 'center') continue;
-      const p = vp.w2s(s.pt);
+    ctx.strokeStyle = '#9fd0ff';
+    ctx.lineWidth = 1;
+    for (const g of ENT.grips(e)) {
+      const p = vp.w2s(g.pt);
       ctx.fillRect(p.x - 3.5, p.y - 3.5, 7, 7);
+      ctx.strokeRect(p.x - 3.5, p.y - 3.5, 7, 7);
     }
   },
 

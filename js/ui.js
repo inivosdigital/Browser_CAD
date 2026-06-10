@@ -26,6 +26,13 @@ const ICONS = {
   erase: '<rect x="3" y="9" width="9" height="7" transform="rotate(-25 7 12)"/><path d="M10 16 H18"/>',
   pan: '<path d="M10 3 V17 M3 10 H17 M8.5 4.5 L10 3 L11.5 4.5 M8.5 15.5 L10 17 L11.5 15.5 M4.5 8.5 L3 10 L4.5 11.5 M15.5 8.5 L17 10 L15.5 11.5" stroke-width="1.2"/>',
   zoom: '<circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.5 12.5 L17.5 17.5"/>',
+  dimradius: '<circle cx="10" cy="10" r="7"/><path d="M10 10 L15 5 M13 5 H15 V7"/>',
+  dimangular: '<path d="M3 17 H17 M3 17 L15 5 M10 17 A 7 7 0 0 0 8 12"/>',
+  extend: '<path d="M3 3 V17" /><path d="M17 10 H7 M9.5 7.5 L7 10 L9.5 12.5" stroke-dasharray="0"/><path d="M17 10 H13" stroke-dasharray="2 2"/>',
+  array: '<circle cx="5" cy="5" r="1.4" fill="currentColor"/><circle cx="10" cy="5" r="1.4" fill="currentColor"/><circle cx="15" cy="5" r="1.4" fill="currentColor"/><circle cx="5" cy="10" r="1.4" fill="currentColor"/><circle cx="10" cy="10" r="1.4" fill="currentColor"/><circle cx="15" cy="10" r="1.4" fill="currentColor"/><circle cx="5" cy="15" r="1.4" fill="currentColor"/><circle cx="10" cy="15" r="1.4" fill="currentColor"/><circle cx="15" cy="15" r="1.4" fill="currentColor"/>',
+  hatch: '<rect x="3" y="3" width="14" height="14"/><path d="M3 9 L9 3 M3 15 L15 3 M7 17 L17 7 M13 17 L17 13"/>',
+  block: '<path d="M10 2 L17 6 V14 L10 18 L3 14 V6 Z M10 10 L17 6 M10 10 L3 6 M10 10 V18"/>',
+  insert: '<path d="M12 4 L17 7 V13 L12 16 L7 13 V7 Z"/><path d="M2 10 H7 M5 8 L7 10 L5 12"/>',
 };
 
 function svgIcon(name) {
@@ -52,6 +59,7 @@ const TOOLBAR_GROUPS = [
       { icon: 'polygon', label: 'Polygon', cmd: 'polygon', tip: 'Polygon (POL)' },
       { icon: 'point', label: 'Point', cmd: 'point', tip: 'Point (PO)' },
       { icon: 'text', label: 'Text', cmd: 'text', tip: 'Text (T)' },
+      { icon: 'hatch', label: 'Hatch', cmd: 'hatch', tip: 'Hatch (H)' },
     ],
   },
   {
@@ -59,6 +67,8 @@ const TOOLBAR_GROUPS = [
     items: [
       { icon: 'dimlinear', label: 'Dim H/V', cmd: 'dimlinear', tip: 'Linear dimension (DLI)' },
       { icon: 'dimaligned', label: 'Dim Ali', cmd: 'dimaligned', tip: 'Aligned dimension (DAL)' },
+      { icon: 'dimradius', label: 'Dim Rad', cmd: 'dimradius', tip: 'Radius dimension (DRA) — diameter: DDI' },
+      { icon: 'dimangular', label: 'Dim Ang', cmd: 'dimangular', tip: 'Angular dimension (DAN)' },
       { icon: 'dist', label: 'Measure', cmd: 'dist', tip: 'Distance (DI)' },
     ],
   },
@@ -72,9 +82,18 @@ const TOOLBAR_GROUPS = [
       { icon: 'mirror', label: 'Mirror', cmd: 'mirror', tip: 'Mirror (MI)' },
       { icon: 'offset', label: 'Offset', cmd: 'offset', tip: 'Offset (O)' },
       { icon: 'trim', label: 'Trim', cmd: 'trim', tip: 'Trim (TR)' },
+      { icon: 'extend', label: 'Extend', cmd: 'extend', tip: 'Extend (EX)' },
+      { icon: 'array', label: 'Array', cmd: 'array', tip: 'Array (AR)' },
       { icon: 'fillet', label: 'Fillet', cmd: 'fillet', tip: 'Fillet (F)' },
       { icon: 'explode', label: 'Explode', cmd: 'explode', tip: 'Explode (X)' },
       { icon: 'erase', label: 'Erase', cmd: 'erase', tip: 'Erase (E)' },
+    ],
+  },
+  {
+    title: 'Blocks',
+    items: [
+      { icon: 'block', label: 'Block', cmd: 'block', tip: 'Define block from selection (B)' },
+      { icon: 'insert', label: 'Insert', cmd: 'insert', tip: 'Insert block (I)' },
     ],
   },
 ];
@@ -129,7 +148,10 @@ const UI = {
       rectangle: 'rectang', polygon: 'polygon', point: 'point', text: 'text',
       dimlinear: 'dimlinear', dimaligned: 'dimaligned', dist: 'dist',
       move: 'move', copy: 'copy', rotate: 'rotate', scale: 'scale', mirror: 'mirror',
-      offset: 'offset', trim: 'trim', fillet: 'fillet', explode: 'explode', erase: 'erase',
+      offset: 'offset', trim: 'trim', extend: 'extend', array: 'array',
+      fillet: 'fillet', explode: 'explode', erase: 'erase',
+      hatch: 'hatch', block: 'block', insert: 'insert',
+      dimradius: 'dimradius', dimdiameter: 'dimradius', dimangular: 'dimangular',
     };
     const active = toolToCmd[app.tool ? app.tool.name : 'select'];
     document.querySelectorAll('.tb-btn').forEach(b => {

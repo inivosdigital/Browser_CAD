@@ -64,6 +64,96 @@ const dg = ENT.dimGeometry(dim);
 check('dim geometry parts', dg.lines.length === 3 && dg.texts.length === 1 && dg.arrows.length === 2);
 check('explode polyline', ENT.explode(pl).length === 2);
 
+console.log('new entity types');
+// radial / angular dimensions
+const rdim = makeEntity('dim', { dtype: 'radius', p1: { x: 0, y: 0 }, p2: { x: 5, y: 0 }, p3: { x: 12, y: 6 } });
+check('radius dim value', near(ENT.dimValue(rdim), 5));
+check('radius dim text', ENT.dimGeometry(rdim).texts[0].text === 'R5');
+const ddim = makeEntity('dim', { dtype: 'diameter', p1: { x: 0, y: 0 }, p2: { x: 5, y: 0 }, p3: { x: 12, y: 6 } });
+check('diameter dim value', near(ENT.dimValue(ddim), 10));
+check('diameter dim has through-line', ENT.dimGeometry(ddim).lines.length === 2 && ENT.dimGeometry(ddim).arrows.length === 2);
+const adim = makeEntity('dim', {
+  dtype: 'angular',
+  p1: { x: 0, y: 0 }, p2: { x: 10, y: 0 }, p3: { x: 0, y: 10 }, p4: { x: 5, y: 5 },
+});
+check('angular dim value 90', near(ENT.dimValue(adim), 90, 1e-6));
+check('angular dim has arc', ENT.dimGeometry(adim).arcs.length === 1);
+const adimOut = makeEntity('dim', {
+  dtype: 'angular',
+  p1: { x: 0, y: 0 }, p2: { x: 10, y: 0 }, p3: { x: 0, y: 10 }, p4: { x: -5, y: -5 },
+});
+check('angular dim reflex side 270', near(ENT.dimValue(adimOut), 270, 1e-6));
+
+// grips
+const gl = makeEntity('line', { a: { x: 0, y: 0 }, b: { x: 10, y: 0 } });
+let gs = ENT.grips(gl);
+check('line has 3 grips', gs.length === 3);
+gs[1].apply({ x: 10, y: 5 });
+check('endpoint grip moves end', nearPt(gl.b, { x: 10, y: 5 }));
+gs = ENT.grips(gl);
+gs[2].apply({ x: 20, y: 20 }); // midpoint grip translates whole line
+check('mid grip translates line', nearPt(GEO.mid(gl.a, gl.b), { x: 20, y: 20 }));
+const gc = makeEntity('circle', { c: { x: 0, y: 0 }, r: 5 });
+ENT.grips(gc)[1].apply({ x: 8, y: 0 });
+check('quad grip sets radius', near(gc.r, 8));
+
+// hatch
+const hatch = makeEntity('hatch', {
+  boundary: { kind: 'poly', pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] },
+  pattern: 'lines', spacing: 2, angle: Math.PI / 4,
+});
+check('hatch hit inside', ENT.hitTest(hatch, { x: 5, y: 5 }, 0.1));
+check('hatch miss outside', !ENT.hitTest(hatch, { x: 15, y: 5 }, 0.1));
+const hb = ENT.bbox(hatch);
+check('hatch bbox', near(hb.x2, 10) && near(hb.y2, 10));
+ENT.transform(hatch, ENT.xfScale({ x: 0, y: 0 }, 2));
+check('hatch scales spacing', near(hatch.spacing, 4) && near(ENT.bbox(hatch).x2, 20));
+check('hatch explodes to boundary', ENT.explode(hatch)[0].type === 'polyline');
+check('ptInPoly', GEO.ptInPoly({ x: 1, y: 1 }, [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }, { x: 0, y: 4 }]));
+check('lineCircle infinite', GEO.lineCircle({ x: -1, y: 0 }, { x: 1, y: 0 }, { x: 10, y: 0 }, 2).length === 2);
+
+// blocks
+const blocks = {
+  bolt: {
+    name: 'bolt', base: { x: 0, y: 0 },
+    entities: [
+      makeEntity('circle', { c: { x: 0, y: 0 }, r: 2 }),
+      makeEntity('line', { a: { x: -2, y: 0 }, b: { x: 2, y: 0 } }),
+    ],
+  },
+};
+ENT.blockResolver = (name) => blocks[name];
+const ins = makeEntity('insert', { name: 'bolt', p: { x: 100, y: 50 }, scale: 2, rotation: 0 });
+const kids = ENT.resolvedChildren(ins);
+check('insert resolves children', kids.length === 2);
+check('insert child transformed', nearPt(kids[0].c, { x: 100, y: 50 }) && near(kids[0].r, 4));
+const ibb = ENT.bbox(ins);
+check('insert bbox', near(ibb.x1, 96) && near(ibb.x2, 104));
+check('insert hitTest rim', ENT.hitTest(ins, { x: 104, y: 50 }, 0.3));
+const exploded = ENT.explode(ins);
+check('insert explodes', exploded.length === 2 && exploded[0].type === 'circle');
+const insRot = makeEntity('insert', { name: 'bolt', p: { x: 0, y: 0 }, scale: 1, rotation: Math.PI / 2 });
+const rkids = ENT.resolvedChildren(insRot);
+check('insert rotation', nearPt(rkids[1].b, { x: 0, y: 2 }));
+
+console.log('pdf');
+const { PDF } = require('../js/pdf.js');
+const pdoc = new (require('../js/document.js').CadDocument)();
+pdoc.add(makeEntity('line', { a: { x: 0, y: 0 }, b: { x: 100, y: 50 } }));
+pdoc.add(makeEntity('circle', { c: { x: 50, y: 25 }, r: 20 }));
+pdoc.add(makeEntity('text', { p: { x: 0, y: 60 }, text: 'Ø45° test (ok)', height: 5, rotation: 0 }));
+pdoc.add(hatch);
+pdoc.add(rdim);
+const pdfStr = PDF.generate(pdoc, pdoc.bbox(), 'a4');
+check('pdf header', pdfStr.startsWith('%PDF-1.4'));
+check('pdf has stream + EOF', pdfStr.includes('stream') && pdfStr.trimEnd().endsWith('%%EOF'));
+check('pdf is pure ASCII', [...pdfStr].every(ch => ch.charCodeAt(0) <= 127));
+check('pdf escapes non-ascii text', pdfStr.includes('\\330')); // Ø in WinAnsi octal
+const lenM = /\/Length (\d+)/.exec(pdfStr);
+const sStart = pdfStr.indexOf('stream\n') + 'stream\n'.length;
+const sEnd = pdfStr.indexOf('\nendstream');
+check('pdf stream length correct', lenM && parseInt(lenM[1], 10) === sEnd - sStart);
+
 console.log('document');
 const doc = new CadDocument();
 doc.add(makeEntity('line', { a: { x: 0, y: 0 }, b: { x: 5, y: 5 } }));
