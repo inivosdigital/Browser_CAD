@@ -598,7 +598,8 @@ const UI = {
       ['Autocomplete', 'type a command — Tab completes, ↑/↓ choose, Enter runs'],
       ['MText', 'MT draws a text box; double-click any mtext to edit in place'],
       ['Layouts', 'tabs below the canvas switch Model / paper space; MV adds a viewport'],
-      ['Template', 'File → Import Template: AutoCAD .dwt exported as DXF → title block into the layout'],
+      ['Template', 'File → Import Template: each template layout becomes a tab at its sheet size'],
+      ['Blocks', 'BE (or double-click an insert) edits a block in place; BC closes; B redefines'],
       ['Dynamic input', 'F12 — live distance&lt;angle tooltip at the cursor before the next click'],
       ['F1', 'Help'], ['F3', 'Object snap'], ['F7', 'Grid'], ['F8', 'Ortho'], ['F9', 'Grid snap'], ['F10', 'Polar tracking'], ['F12', 'Dynamic input'],
       ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+A', 'Select all'], ['Ctrl+S', 'Save'], ['Delete', 'Erase selection'],
@@ -627,6 +628,10 @@ const UI = {
       wrap.appendChild(b);
       return b;
     };
+    const blk = app.doc.editingBlock();
+    if (blk) {
+      mk(`✎ Block: ${blk} — click to finish`, true, () => app.execCommand('bclose'), 'block-edit');
+    }
     mk('Model', app.doc.space === 'model', () => app.setSpace('model'));
     app.doc.layouts.forEach((l, i) => {
       const t = mk(l.name, app.doc.space === i, () => app.setSpace(i));
@@ -657,6 +662,12 @@ const UI = {
         o.value = name;
         const [w, h] = UNITS.PAPERS[name];
         o.textContent = `${name.toUpperCase()} (${w}×${h}")`;
+        sel.appendChild(o);
+      }
+      if (layout.paper === 'custom') {
+        const o = document.createElement('option');
+        o.value = 'custom';
+        o.textContent = `CUSTOM (${layout.customW}×${layout.customH}")`;
         sel.appendChild(o);
       }
       sel.value = layout.paper;

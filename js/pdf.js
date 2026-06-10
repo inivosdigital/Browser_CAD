@@ -253,7 +253,7 @@ const PDF = {
 
   /* Plot a paper-space layout at 1:1. */
   generateLayout(doc, layout) {
-    const [W, H] = UNITS.paperDims(layout.paper, layout.landscape);
+    const [W, H] = UNITS.layoutDims(layout);
     return PDF.generate(
       doc,
       { x1: 0, y1: 0, x2: W, y2: H },
