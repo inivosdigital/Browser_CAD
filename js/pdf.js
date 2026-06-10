@@ -144,7 +144,7 @@ const PDF = {
           w('S');
           break;
         }
-        case 'text': text(e.p, e.text, e.height, e.rotation || 0, 'left'); break;
+        case 'text': text(e.p, e.text, e.height, e.rotation || 0, e.align || 'left'); break;
         case 'mtext': {
           const mls = ENT.mtextLines(e);
           for (let i = 0; i < mls.length; i++) {
