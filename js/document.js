@@ -6,6 +6,7 @@ const DEFAULT_LAYER_COLORS = ['#ffffff', '#ff4444', '#ffdd44', '#44dd44', '#44dd
 class CadDocument {
   constructor() {
     this.entities = [];
+    this.blocks = {}; // name -> { name, base:{x,y}, entities:[...] }
     this.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false }];
     this.currentLayer = '0';
     this.selection = new Set(); // entity ids
@@ -100,6 +101,7 @@ class CadDocument {
   _snapshot() {
     return JSON.stringify({
       entities: this.entities,
+      blocks: this.blocks,
       layers: this.layers,
       currentLayer: this.currentLayer,
     });
@@ -108,6 +110,7 @@ class CadDocument {
   _restore(snap) {
     const s = JSON.parse(snap);
     this.entities = s.entities;
+    this.blocks = s.blocks || {};
     this.layers = s.layers;
     this.currentLayer = s.currentLayer;
     // drop selection ids that no longer exist
@@ -150,6 +153,7 @@ class CadDocument {
       layers: this.layers,
       currentLayer: this.currentLayer,
       entities: this.entities,
+      blocks: this.blocks,
       settings: this.settings,
     };
   }
@@ -157,12 +161,16 @@ class CadDocument {
   loadJSON(data) {
     if (!data || !Array.isArray(data.entities)) throw new Error('Not a BrowserCAD drawing');
     this.entities = data.entities;
+    this.blocks = data.blocks || {};
     this.layers = (data.layers && data.layers.length) ? data.layers : [{ name: '0', color: '#ffffff', visible: true, locked: false }];
     if (!this.layer('0')) this.layers.unshift({ name: '0', color: '#ffffff', visible: true, locked: false });
     this.currentLayer = this.layer(data.currentLayer) ? data.currentLayer : '0';
     if (data.settings) Object.assign(this.settings, data.settings);
     let maxId = 0;
     for (const e of this.entities) maxId = Math.max(maxId, e.id || 0);
+    for (const b of Object.values(this.blocks)) {
+      for (const e of b.entities) maxId = Math.max(maxId, e.id || 0);
+    }
     setEntitySeq(maxId + 1);
     this.selection.clear();
     this.undoStack.length = 0;
@@ -173,6 +181,7 @@ class CadDocument {
 
   clear() {
     this.entities = [];
+    this.blocks = {};
     this.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false }];
     this.currentLayer = '0';
     this.selection.clear();

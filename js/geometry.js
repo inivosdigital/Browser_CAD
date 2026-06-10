@@ -89,6 +89,33 @@ const GEO = {
     if (t < -e || t > 1 + e || u < -e || u > 1 + e) return null;
     return GEO.add(p1, GEO.mul(d1, t));
   },
+  // Infinite line / circle intersections.
+  lineCircle(a, b, c, r) {
+    const d = GEO.sub(b, a), f = GEO.sub(a, c);
+    const A = GEO.dot(d, d);
+    if (A < GEO.EPS) return [];
+    const B = 2 * GEO.dot(f, d);
+    const C = GEO.dot(f, f) - r * r;
+    let disc = B * B - 4 * A * C;
+    if (disc < 0) return [];
+    disc = Math.sqrt(disc);
+    const out = [];
+    for (const t of [(-B - disc) / (2 * A), (-B + disc) / (2 * A)]) {
+      const p = GEO.add(a, GEO.mul(d, t));
+      if (!out.some(q => GEO.eq(q, p))) out.push(p);
+    }
+    return out;
+  },
+  // Point inside polygon (ray casting).
+  ptInPoly(p, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i], b = pts[j];
+      if ((a.y > p.y) !== (b.y > p.y) &&
+          p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+  },
   // Segment/circle intersections.
   segCircle(a, b, c, r) {
     const d = GEO.sub(b, a), f = GEO.sub(a, c);

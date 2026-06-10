@@ -1,6 +1,10 @@
 /* entities.js — entity model: plain serializable objects + operations keyed by type.
    Types: line {a,b} | circle {c,r} | arc {c,r,a0,a1} (CCW) | polyline {pts,closed}
-          point {p} | text {p,text,height,rotation} | dim {dtype,p1,p2,p3} */
+          point {p} | text {p,text,height,rotation}
+          dim {dtype,p1,p2,p3[,p4]}  dtype: linear-h | linear-v | aligned |
+                                            radius | diameter | angular
+          hatch {boundary:{kind:'poly',pts}|{kind:'circle',c,r}, pattern, spacing, angle}
+          insert {name, p, scale, rotation}  (block reference) */
 'use strict';
 
 let _entSeq = 1;
@@ -9,10 +13,31 @@ function makeEntity(type, props) {
   return Object.assign({ id: _entSeq++, type, layer: '0', color: null }, props);
 }
 function setEntitySeq(n) { _entSeq = Math.max(_entSeq, n); }
+function nextEntityId() { return _entSeq++; }
 
 const ENT = {
 
   clone(e) { return JSON.parse(JSON.stringify(e)); },
+
+  // Set by the app to look up block definitions: (name) => {name, base, entities}
+  blockResolver: null,
+
+  // Children of a block reference, transformed into world space.
+  resolvedChildren(e) {
+    const blk = ENT.blockResolver && ENT.blockResolver(e.name);
+    if (!blk) return [];
+    const base = blk.base;
+    const sc = ENT.xfScale(base, e.scale == null ? 1 : e.scale);
+    const ro = ENT.xfRotate(base, e.rotation || 0);
+    const tr = ENT.xfTranslate(GEO.sub(e.p, base));
+    return blk.entities.map(ch => {
+      const c = ENT.clone(ch);
+      ENT.transform(c, sc);
+      ENT.transform(c, ro);
+      ENT.transform(c, tr);
+      return c;
+    });
+  },
 
   /* ---- decomposition: every entity reduces to segments / arcs / circles ---- */
 
@@ -32,6 +57,25 @@ const ENT = {
       case 'dim': {
         const g = ENT.dimGeometry(e);
         for (const l of g.lines) out.segs.push([l.a, l.b]);
+        for (const a of g.arcs) out.arcs.push(a);
+        break;
+      }
+      case 'hatch': {
+        const b = e.boundary;
+        if (b.kind === 'circle') out.circles.push({ c: b.c, r: b.r });
+        else {
+          const n = b.pts.length;
+          for (let i = 0; i < n; i++) out.segs.push([b.pts[i], b.pts[(i + 1) % n]]);
+        }
+        break;
+      }
+      case 'insert': {
+        for (const ch of ENT.resolvedChildren(e)) {
+          const pr = ENT.prims(ch);
+          out.segs.push(...pr.segs);
+          out.arcs.push(...pr.arcs);
+          out.circles.push(...pr.circles);
+        }
         break;
       }
     }
@@ -69,6 +113,26 @@ const ENT = {
         const g = ENT.dimGeometry(e);
         for (const l of g.lines) { GEO.bbAddPt(b, l.a); GEO.bbAddPt(b, l.b); }
         for (const t of g.texts) GEO.bbAddPt(b, t.p);
+        for (const a of g.arcs) {
+          GEO.bbAddPt(b, { x: a.c.x - a.r, y: a.c.y - a.r });
+          GEO.bbAddPt(b, { x: a.c.x + a.r, y: a.c.y + a.r });
+        }
+        break;
+      }
+      case 'hatch': {
+        const bd = e.boundary;
+        if (bd.kind === 'circle') {
+          GEO.bbAddPt(b, { x: bd.c.x - bd.r, y: bd.c.y - bd.r });
+          GEO.bbAddPt(b, { x: bd.c.x + bd.r, y: bd.c.y + bd.r });
+        } else for (const p of bd.pts) GEO.bbAddPt(b, p);
+        break;
+      }
+      case 'insert': {
+        for (const ch of ENT.resolvedChildren(e)) {
+          const cb = ENT.bbox(ch);
+          if (GEO.bbValid(cb)) { GEO.bbAddPt(b, { x: cb.x1, y: cb.y1 }); GEO.bbAddPt(b, { x: cb.x2, y: cb.y2 }); }
+        }
+        if (!GEO.bbValid(b)) GEO.bbAddPt(b, e.p);
         break;
       }
     }
@@ -98,8 +162,17 @@ const ENT = {
       case 'dim': {
         const g = ENT.dimGeometry(e);
         return g.lines.some(l => GEO.distPtSeg(p, l.a, l.b) <= tol) ||
+          g.arcs.some(a => GEO.angIn(GEO.ang(a.c, p), a.a0, a.a1) && Math.abs(GEO.dist(p, a.c) - a.r) <= tol) ||
           g.texts.some(t => GEO.dist(p, t.p) <= Math.max(tol, t.height));
       }
+      case 'hatch': {
+        const b = e.boundary;
+        if (b.kind === 'circle') return GEO.dist(p, b.c) <= b.r + tol;
+        return GEO.ptInPoly(p, b.pts) ||
+          b.pts.some((q, i) => GEO.distPtSeg(p, q, b.pts[(i + 1) % b.pts.length]) <= tol);
+      }
+      case 'insert':
+        return ENT.resolvedChildren(e).some(ch => ENT.hitTest(ch, p, tol));
     }
     return false;
   },
@@ -137,6 +210,18 @@ const ENT = {
         for (const l of g.lines) { push(l.a, 'end'); push(l.b, 'end'); }
         break;
       }
+      case 'hatch': {
+        const b = e.boundary;
+        if (b.kind === 'circle') {
+          push(b.c, 'center');
+          for (let q = 0; q < 4; q++) push(GEO.polar(b.c, q * Math.PI / 2, b.r), 'quad');
+        } else for (const p of b.pts) push(p, 'end');
+        break;
+      }
+      case 'insert':
+        push(e.p, 'end');
+        for (const ch of ENT.resolvedChildren(e)) out.push(...ENT.snapPoints(ch));
+        break;
     }
     return out;
   },
@@ -204,11 +289,82 @@ const ENT = {
         e.height *= xf.scl;
         if (!xf.flip) e.rotation = xf.ang(e.rotation || 0);
         break;
-      case 'dim': e.p1 = xf.pt(e.p1); e.p2 = xf.pt(e.p2); e.p3 = xf.pt(e.p3); break;
+      case 'dim':
+        e.p1 = xf.pt(e.p1); e.p2 = xf.pt(e.p2); e.p3 = xf.pt(e.p3);
+        if (e.p4) e.p4 = xf.pt(e.p4);
+        break;
+      case 'hatch': {
+        const b = e.boundary;
+        if (b.kind === 'circle') { b.c = xf.pt(b.c); b.r *= xf.scl; }
+        else b.pts = b.pts.map(xf.pt);
+        e.spacing *= xf.scl;
+        e.angle = xf.ang(e.angle || 0);
+        break;
+      }
+      case 'insert':
+        // mirroring a block reference is approximated (position/rotation only)
+        e.p = xf.pt(e.p);
+        e.scale = (e.scale == null ? 1 : e.scale) * xf.scl;
+        e.rotation = xf.ang(e.rotation || 0);
+        break;
     }
     return e;
   },
   transformed(e, xf) { return ENT.transform(ENT.clone(e), xf); },
+
+  /* ---- grips: draggable defining points. apply() sets from an absolute point ---- */
+
+  grips(e) {
+    const g = [];
+    const add = (pt, apply) => g.push({ pt: { ...pt }, apply });
+    switch (e.type) {
+      case 'line':
+        add(e.a, p => { e.a = { ...p }; });
+        add(e.b, p => { e.b = { ...p }; });
+        add(GEO.mid(e.a, e.b), p => {
+          const d = GEO.sub(p, GEO.mid(e.a, e.b));
+          e.a = GEO.add(e.a, d); e.b = GEO.add(e.b, d);
+        });
+        break;
+      case 'circle':
+        add(e.c, p => { e.c = { ...p }; });
+        for (let q = 0; q < 4; q++) {
+          add(GEO.polar(e.c, q * Math.PI / 2, e.r), p => {
+            const r = GEO.dist(e.c, p);
+            if (r > 1e-9) e.r = r;
+          });
+        }
+        break;
+      case 'arc':
+        add(e.c, p => { e.c = { ...p }; });
+        add(GEO.polar(e.c, e.a0, e.r), p => { e.a0 = GEO.normAng(GEO.ang(e.c, p)); });
+        add(GEO.polar(e.c, e.a1, e.r), p => { e.a1 = GEO.normAng(GEO.ang(e.c, p)); });
+        add(GEO.polar(e.c, e.a0 + GEO.sweep(e.a0, e.a1) / 2, e.r), p => {
+          const r = GEO.dist(e.c, p);
+          if (r > 1e-9) e.r = r;
+        });
+        break;
+      case 'polyline':
+        e.pts.forEach((pt, i) => add(pt, p => { e.pts[i] = { ...p }; }));
+        break;
+      case 'point': add(e.p, p => { e.p = { ...p }; }); break;
+      case 'text': add(e.p, p => { e.p = { ...p }; }); break;
+      case 'dim':
+        add(e.p1, p => { e.p1 = { ...p }; });
+        add(e.p2, p => { e.p2 = { ...p }; });
+        add(e.p3, p => { e.p3 = { ...p }; });
+        if (e.p4) add(e.p4, p => { e.p4 = { ...p }; });
+        break;
+      case 'hatch': {
+        const b = e.boundary;
+        if (b.kind === 'circle') add(b.c, p => { b.c = { ...p }; });
+        else b.pts.forEach((pt, i) => add(pt, p => { b.pts[i] = { ...p }; }));
+        break;
+      }
+      case 'insert': add(e.p, p => { e.p = { ...p }; }); break;
+    }
+    return g;
+  },
 
   /* ---- selection rectangle test ---- */
 
@@ -246,9 +402,24 @@ const ENT = {
   DIM_EXT_OVER: 1.2,
 
   dimValue(e) {
-    if (e.dtype === 'linear-h') return Math.abs(e.p2.x - e.p1.x);
-    if (e.dtype === 'linear-v') return Math.abs(e.p2.y - e.p1.y);
-    return GEO.dist(e.p1, e.p2);
+    switch (e.dtype) {
+      case 'linear-h': return Math.abs(e.p2.x - e.p1.x);
+      case 'linear-v': return Math.abs(e.p2.y - e.p1.y);
+      case 'radius': return GEO.dist(e.p1, e.p2);
+      case 'diameter': return 2 * GEO.dist(e.p1, e.p2);
+      case 'angular': return ENT._angularSweep(e) * 180 / Math.PI;
+      default: return GEO.dist(e.p1, e.p2);
+    }
+  },
+
+  // angular dim: CCW arc between rays p1->p2 and p1->p3, on the side of p4
+  _angularSpan(e) {
+    const aA = GEO.ang(e.p1, e.p2), aB = GEO.ang(e.p1, e.p3), aP = GEO.ang(e.p1, e.p4);
+    return GEO.angIn(aP, aA, aB) ? [aA, aB] : [aB, aA];
+  },
+  _angularSweep(e) {
+    const [a0, a1] = ENT._angularSpan(e);
+    return GEO.sweep(a0, a1);
   },
 
   formatDim(v) {
@@ -257,9 +428,55 @@ const ENT = {
     return s;
   },
 
-  // -> { lines:[{a,b}], texts:[{p,text,height,rotation}], arrows:[{p,ang}] }
+  // -> { lines:[{a,b}], arcs:[{c,r,a0,a1}], texts:[{p,text,height,rotation}], arrows:[{p,ang}] }
+  // arrow `ang` = world direction from tip toward barbs
   dimGeometry(e) {
-    const g = { lines: [], texts: [], arrows: [] };
+    const g = { lines: [], arcs: [], texts: [], arrows: [] };
+
+    if (e.dtype === 'radius' || e.dtype === 'diameter') {
+      const c = e.p1, rim = e.p2;
+      const lead = GEO.ang(e.p3, rim);
+      g.lines.push({ a: e.p3, b: rim });
+      g.arrows.push({ p: rim, ang: lead + Math.PI });
+      if (e.dtype === 'diameter') {
+        const rim2 = { x: 2 * c.x - rim.x, y: 2 * c.y - rim.y };
+        g.lines.push({ a: rim, b: rim2 });
+        g.arrows.push({ p: rim2, ang: lead });
+      }
+      const prefix = e.dtype === 'radius' ? 'R' : 'Ø';
+      const side = e.p3.x >= rim.x ? 1 : -1;
+      g.texts.push({
+        p: GEO.add(e.p3, { x: side * ENT.DIM_TEXT * 0.4, y: -ENT.DIM_TEXT * 0.35 }),
+        text: prefix + ENT.formatDim(ENT.dimValue(e)),
+        height: ENT.DIM_TEXT,
+        rotation: 0,
+        align: side >= 0 ? 'left' : 'right',
+      });
+      return g;
+    }
+
+    if (e.dtype === 'angular') {
+      const [a0, a1] = ENT._angularSpan(e);
+      const r = Math.max(GEO.dist(e.p1, e.p4), ENT.DIM_TEXT);
+      g.arcs.push({ c: e.p1, r, a0: GEO.normAng(a0), a1: GEO.normAng(a1) });
+      // extension lines from vertex out to the arc along each ray
+      for (const a of [a0, a1]) {
+        g.lines.push({ a: GEO.polar(e.p1, a, Math.max(r * 0.25, ENT.DIM_EXT_GAP)), b: GEO.polar(e.p1, a, r + ENT.DIM_EXT_OVER) });
+      }
+      // arrows tangent to the arc at its ends, barbs pointing into the arc
+      g.arrows.push({ p: GEO.polar(e.p1, a0, r), ang: a0 + Math.PI / 2 });
+      g.arrows.push({ p: GEO.polar(e.p1, a1, r), ang: a1 - Math.PI / 2 });
+      const amid = a0 + GEO.sweep(a0, a1) / 2;
+      g.texts.push({
+        p: GEO.polar(e.p1, amid, r + ENT.DIM_TEXT * 1.2),
+        text: ENT.formatDim(ENT.dimValue(e)) + '°',
+        height: ENT.DIM_TEXT,
+        rotation: 0,
+        align: 'center',
+      });
+      return g;
+    }
+
     let d1, d2; // ends of the dimension line
     if (e.dtype === 'linear-h') {
       d1 = { x: e.p1.x, y: e.p3.y }; d2 = { x: e.p2.x, y: e.p3.y };
@@ -306,9 +523,23 @@ const ENT = {
       const pr = ENT.prims(e);
       return pr.segs.map(s => makeEntity('line', { a: s[0], b: s[1], layer: e.layer, color: e.color }));
     }
+    if (e.type === 'hatch') {
+      const b = e.boundary;
+      if (b.kind === 'circle') return [makeEntity('circle', { c: { ...b.c }, r: b.r, layer: e.layer, color: e.color })];
+      return [makeEntity('polyline', { pts: b.pts.map(p => ({ ...p })), closed: true, layer: e.layer, color: e.color })];
+    }
+    if (e.type === 'insert') {
+      return ENT.resolvedChildren(e).map(ch => {
+        ch.id = nextEntityId();
+        return ch;
+      });
+    }
     if (e.type === 'dim') {
       const g = ENT.dimGeometry(e);
       const out = g.lines.map(l => makeEntity('line', { a: l.a, b: l.b, layer: e.layer, color: e.color }));
+      for (const a of g.arcs) {
+        out.push(makeEntity('arc', { c: { ...a.c }, r: a.r, a0: a.a0, a1: a.a1, layer: e.layer, color: e.color }));
+      }
       for (const ar of g.arrows) {
         const tip = ar.p;
         const b1 = GEO.polar(tip, ar.ang + 0.16, ENT.DIM_ARROW);
@@ -335,9 +566,11 @@ const ENT = {
       case 'point': return 'Point';
       case 'text': return 'Text';
       case 'dim': return 'Dimension';
+      case 'hatch': return `Hatch (${e.pattern})`;
+      case 'insert': return `Block "${e.name}"`;
     }
     return e.type;
   },
 };
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { ENT, makeEntity, setEntitySeq };
+if (typeof module !== 'undefined' && module.exports) module.exports = { ENT, makeEntity, setEntitySeq, nextEntityId };
