@@ -33,6 +33,12 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Cache-bust asset URLs with the commit SHA
+        run: |
+          V="${GITHUB_SHA::8}"
+          sed -i "s|src=\"js/\([a-z]*\)\.js\"|src=\"js/\1.js?v=$V\"|g" index.html
+          sed -i "s|href=\"css/style\.css\"|href=\"css/style.css?v=$V\"|g" index.html
+          grep -c "?v=$V" index.html
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
