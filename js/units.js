@@ -6,6 +6,26 @@
 
 const UNITS = {
 
+  // paper sizes in inches (portrait W x H)
+  PAPERS: {
+    letter: [8.5, 11],
+    'ansi-b': [11, 17],
+    a4: [8.27, 11.69],
+    a3: [11.69, 16.54],
+    'arch-d': [24, 36],
+  },
+  paperDims(name, landscape) {
+    const d = UNITS.PAPERS[name] || UNITS.PAPERS.letter;
+    return landscape ? [d[1], d[0]] : [d[0], d[1]];
+  },
+  // annotation / viewport scale label: 48 -> 1/4"=1'-0"
+  scaleLabel(n) {
+    if (!n || Math.abs(n - 1) < 1e-9) return '1:1';
+    const arch = { 192: '1/16"', 96: '1/8"', 64: '3/16"', 48: '1/4"', 32: '3/8"', 24: '1/2"', 16: '3/4"', 12: '1"' };
+    if (arch[n]) return `${arch[n]}=1'-0"`;
+    return `1:${+n.toFixed(4)}`;
+  },
+
   // number token: "6", "6.5", "1/2", "6 1/2", "6-1/2" -> value | null
   _num(tok) {
     const t = String(tok).trim();

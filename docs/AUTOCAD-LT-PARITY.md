@@ -59,7 +59,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | **Imperial/architectural dim display X'-Y"** | via DIMSTYLE units | ✅ **default** | done |
 | Leaders / Multileaders (MLEADER) | ✅ | ✅ simple leader (`LE`) | mleader styles P3 |
 | Tables | ✅ | ❌ | — |
-| Annotative scaling | ✅ | ❌ | — |
+| Annotative scaling | ✅ | ✅ ANNOSCALE: dims/leaders size by scale; viewports compensate | named per-object scales P3 |
 | Centerlines / center marks | ✅ | ❌ | P3 |
 
 ## 4. Precision & Input Mechanics
@@ -107,7 +107,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 |---|---|---|---|
 | Pan/zoom, zoom extents/window/previous | ✅ | 🟡 no zoom previous | P3 |
 | Named views | ✅ | ❌ | — |
-| **Paper-space layouts + viewports, viewport scale** | ✅ | ❌ | P2 (single layout, scaled viewport, title block) |
+| **Paper-space layouts + viewports, viewport scale** | ✅ | ✅ layout tabs, MVIEW viewports w/ standard scales, paper sizes incl. ANSI-B/ARCH-D | per-viewport layer freeze P3 |
 | Plot to printer/**PDF**, plot styles (CTB), lineweights | ✅ | 🟡 vector PDF, no styles | P2 lineweight in plot |
 | Plot scale (1/4" = 1'-0" etc.) | ✅ | ✅ Fit, 1:n, x/y"=1'-0" | — |
 | Page setups | ✅ | ❌ | P3 |
@@ -117,11 +117,11 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Feature | LT behavior | BrowserCAD | Priority |
 |---|---|---|---|
 | DWG native | ✅ | ❌ (proprietary JSON) | — (DWG is closed; DXF is our interchange) |
-| DXF in/out | ✅ | ✅ R12 | P2 R2000+ (LWPOLYLINE, splines) |
+| DXF in/out | ✅ | ✅ R12 out; reader handles R12-R2018 text DXF: LWPOLYLINE, INSERT, SOLID, BLOCKS section, paper space (67) | splines P3 |
 | Drawing compare (DWG Compare) | ✅ | ❌ | — |
 | Count (objects/blocks) | ✅ | ❌ | P3 (easy: count selection by type) |
 | Autosave/recovery | ✅ | ✅ localStorage | — |
-| Templates (DWT) | ✅ | ❌ | P3 |
+| Templates (DWT) | ✅ | 🟡 via DXF: SAVEAS the .dwt → DXF once, then Import Template (title block → layout, blocks kept) | native DWG is closed |
 
 ## 9. UI & Automation
 
@@ -143,9 +143,11 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
    object snap tracking (F11) · angle override `<30` · circle 3P ·
    rotate/scale Reference · MTEXT (in-canvas editor) · dimension style dialog ·
    command autocomplete
-3. **P2b batch — remaining big rocks**: polyline arc segments + PEDIT Join ·
-   hatch pattern library · DXF R2000 · paper-space layout w/ viewports
-4. **P3 / later**: everything else marked P3 above.
+3. ~~**P2b: paper space**~~ ✅ **shipped**: layout tabs · MVIEW viewports ·
+   annotation scale (ANNOSCALE) · template import via DXF · 1:1 layout plotting
+4. **Remaining big rocks**: polyline arc segments + PEDIT Join · hatch pattern
+   library · DXF splines
+5. **P3 / later**: everything else marked P3 above.
 
 ### Sources
 

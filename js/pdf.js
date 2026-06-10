@@ -22,9 +22,12 @@ const PDF = {
   },
 
   /* Generate a PDF (string of bytes <= 0x7F) plotting `rect` of the document.
-     fixedScale: paper-inches per drawing-inch (e.g. 1/48 for 1/4" = 1'-0"), or null = fit. */
-  generate(doc, rect, paper, fixedScale) {
-    let [pw, ph] = PDF.PAPER[paper] || PDF.PAPER.a4;
+     fixedScale: paper-inches per drawing-inch (e.g. 1/48 for 1/4" = 1'-0"), or null = fit.
+     paper: a PDF.PAPER key or explicit [w, h] in points.
+     opts.entities: draw this list instead of doc.entities (layout plotting).
+     opts.viewports: viewport entities whose model contents get drawn clipped. */
+  generate(doc, rect, paper, fixedScale, opts) {
+    let [pw, ph] = Array.isArray(paper) ? paper : (PDF.PAPER[paper] || PDF.PAPER.a4);
     const bw = Math.max(rect.x2 - rect.x1, 1e-9);
     const bh = Math.max(rect.y2 - rect.y1, 1e-9);
     if ((bw > bh) !== (pw > ph)) { const t = pw; pw = ph; ph = t; } // auto-orient
@@ -115,9 +118,9 @@ const PDF = {
       w(`${X(tip.x)} ${Y(tip.y)} m ${X(b1.x)} ${Y(b1.y)} l ${X(b2.x)} ${Y(b2.y)} l h f`);
     };
 
-    const drawEntity = (e, inkOverride) => {
+    const drawEntity = (e, inkOverride, layerName) => {
       const ink = inkOverride || color(PDF._entityColor(doc, e));
-      const ly = doc.layer(e.layer);
+      const ly = doc.layer(layerName || e.layer);
       const dash = (ly && PDF.LTYPES[ly.ltype]) || [];
       const lw = 0.6 * (ly && ly.lweight ? ly.lweight : 1);
       w(`${ink} RG ${ink} rg`);
@@ -216,14 +219,51 @@ const PDF = {
       }
     };
 
-    for (const e of doc.entities) {
+    const list = (opts && opts.entities) || doc.entities;
+    for (const e of list) {
       if (!doc.visible(e)) continue;
+      if (e.type === 'viewport') continue; // frames don't plot
       const bb = ENT.bbox(e);
       if (GEO.bbValid(bb) && !GEO.bbOverlap(bb, rect)) continue;
       drawEntity(e);
     }
 
+    // paper-space viewports: clip to the frame, draw transformed model contents
+    if (opts && opts.viewports) {
+      for (const v of opts.viewports) {
+        w('q');
+        w(`${X(v.p.x)} ${Y(v.p.y)} ${(v.w * scale).toFixed(2)} ${(v.h * scale).toFixed(2)} re W n`);
+        const xf = ENT.viewportXf(v);
+        const keep = [ENT.DIM_TEXT, ENT.DIM_ARROW, ENT.DIM_EXT_GAP, ENT.DIM_EXT_OVER];
+        ENT.DIM_TEXT *= v.scale; ENT.DIM_ARROW *= v.scale;
+        ENT.DIM_EXT_GAP *= v.scale; ENT.DIM_EXT_OVER *= v.scale;
+        for (const me of (doc.modelEntities || [])) {
+          if (!doc.visible(me)) continue;
+          const clone = ENT.transformed(me, xf);
+          if (me.type === 'dim') clone.$text = ENT.dimGeometry(me).texts[0].text;
+          drawEntity(clone, null, me.layer);
+        }
+        [ENT.DIM_TEXT, ENT.DIM_ARROW, ENT.DIM_EXT_GAP, ENT.DIM_EXT_OVER] = keep;
+        w('Q');
+      }
+    }
+
     return PDF._wrap(out.join('\n'), pw, ph);
+  },
+
+  /* Plot a paper-space layout at 1:1. */
+  generateLayout(doc, layout) {
+    const [W, H] = UNITS.paperDims(layout.paper, layout.landscape);
+    return PDF.generate(
+      doc,
+      { x1: 0, y1: 0, x2: W, y2: H },
+      [W * 72, H * 72],
+      1,
+      {
+        entities: layout.entities,
+        viewports: layout.entities.filter(e => e.type === 'viewport'),
+      }
+    );
   },
 
   _entityColor(doc, e) {

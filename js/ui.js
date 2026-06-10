@@ -42,6 +42,9 @@ const ICONS = {
   dimcontinue: '<path d="M3 4 V12 M10 4 V12 M17 4 V12 M3 8 H17"/><path d="M5 15 H15 M13 13.5 L15 15 L13 16.5"/>',
   dimbaseline: '<path d="M3 3 V17 M11 5 V11 M17 11 V17 M3 8 H11 M3 14 H17"/>',
   mtext: '<rect x="3" y="4" width="14" height="12"/><path d="M5 8 H15 M5 11 H15 M5 14 H11"/>',
+  mview: '<rect x="2" y="3" width="16" height="14"/><rect x="5" y="6" width="10" height="8"/><path d="M7 12 L10 8 L13 12" stroke-width="1.1"/>',
+  annoscale: '<path d="M3 17 L17 3 M5 13 L7 15 M9 9 L11 11 M13 5 L15 7"/><path d="M11 16 H17 M14 13 V16" stroke-width="1.1"/>',
+  template: '<rect x="3" y="2" width="14" height="16"/><path d="M3 14 H17 M12 14 V18 M5 5 H12 M5 8 H10"/>',
 };
 
 function svgIcon(name) {
@@ -105,6 +108,14 @@ const TOOLBAR_GROUPS = [
       { icon: 'chamfer', label: 'Chamfer', cmd: 'chamfer', tip: 'Chamfer (CHA)' },
       { icon: 'explode', label: 'Explode', cmd: 'explode', tip: 'Explode (X)' },
       { icon: 'erase', label: 'Erase', cmd: 'erase', tip: 'Erase (E)' },
+    ],
+  },
+  {
+    title: 'Layout',
+    items: [
+      { icon: 'mview', label: 'Viewport', cmd: 'mview', tip: 'New paper-space viewport (MV)' },
+      { icon: 'annoscale', label: 'Anno Scl', cmd: 'annoscale', tip: 'Annotation scale (ANNOSCALE)' },
+      { icon: 'template', label: 'Template', cmd: 'template', tip: 'Import AutoCAD template (DXF)' },
     ],
   },
   {
@@ -174,6 +185,7 @@ const UI = {
       ellipse: 'ellipse', leader: 'leader', mtext: 'mtext', break: 'break', join: 'join',
       stretch: 'stretch', chamfer: 'chamfer',
       dimcontinue: 'dimcontinue', dimbaseline: 'dimbaseline', plot: '_select',
+      mview: 'mview', annoscale: 'annoscale',
     };
     const active = toolToCmd[app.tool ? app.tool.name : 'select'];
     document.querySelectorAll('.tb-btn').forEach(b => {
@@ -225,6 +237,7 @@ const UI = {
     bind('tog-polar', 'polar');
     bind('tog-otrack', 'otrack');
     bind('tog-dyn', 'dyn');
+    document.getElementById('anno-scale').addEventListener('click', () => app.execCommand('annoscale'));
     bind('tog-osnap', 'osnap');
   },
 
@@ -238,6 +251,8 @@ const UI = {
     set('tog-otrack', s.otrack);
     set('tog-dyn', s.dynInput);
     set('tog-osnap', s.osnap);
+    document.getElementById('anno-scale').textContent = UNITS.scaleLabel(s.annoScale || 1);
+    document.getElementById('anno-scale').classList.toggle('on', (s.annoScale || 1) !== 1);
     document.getElementById('zoom-level').textContent = `${(app.vp.scale * 100 / 4).toFixed(0)}%`;
     document.getElementById('cur-layer').textContent = app.doc.currentLayer;
     const sw = document.getElementById('cur-layer-swatch');
@@ -525,6 +540,15 @@ const UI = {
         info('Value', ENT.formatDim(ENT.dimValue(e)));
         info('Type', e.dtype);
         break;
+      case 'viewport': {
+        info('Scale', UNITS.scaleLabel(1 / e.scale));
+        row('Scale 1:n', numField(1 / e.scale, v => { if (v > 0) e.scale = 1 / v; }));
+        row('Center X', numField(e.center.x, v => { e.center.x = v; }));
+        row('Center Y', numField(e.center.y, v => { e.center.y = v; }));
+        row('Width', numField(e.w, v => { if (v > 0.1) e.w = v; }));
+        row('Height', numField(e.h, v => { if (v > 0.1) e.h = v; }));
+        break;
+      }
     }
   },
 
@@ -557,6 +581,8 @@ const UI = {
       ['Angle override', 'type &lt;30 to lock the next point to a 30° bearing'],
       ['Autocomplete', 'type a command — Tab completes, ↑/↓ choose, Enter runs'],
       ['MText', 'MT draws a text box; double-click any mtext to edit in place'],
+      ['Layouts', 'tabs below the canvas switch Model / paper space; MV adds a viewport'],
+      ['Template', 'File → Import Template: AutoCAD .dwt exported as DXF → title block into the layout'],
       ['Dynamic input', 'F12 — live distance&lt;angle tooltip at the cursor before the next click'],
       ['F1', 'Help'], ['F3', 'Object snap'], ['F7', 'Grid'], ['F8', 'Ortho'], ['F9', 'Grid snap'], ['F10', 'Polar tracking'], ['F12', 'Dynamic input'],
       ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+A', 'Select all'], ['Ctrl+S', 'Save'], ['Delete', 'Erase selection'],
@@ -570,6 +596,62 @@ const UI = {
 
   showHelp() {
     document.getElementById('help-modal').hidden = false;
+  },
+
+  /* ---- model / layout tabs ---- */
+
+  refreshTabs(app) {
+    const wrap = document.getElementById('space-tabs');
+    wrap.innerHTML = '';
+    const mk = (label, active, onClick, extraClass) => {
+      const b = document.createElement('button');
+      b.className = 'space-tab' + (active ? ' active' : '') + (extraClass ? ' ' + extraClass : '');
+      b.textContent = label;
+      b.addEventListener('click', onClick);
+      wrap.appendChild(b);
+      return b;
+    };
+    mk('Model', app.doc.space === 'model', () => app.setSpace('model'));
+    app.doc.layouts.forEach((l, i) => {
+      const t = mk(l.name, app.doc.space === i, () => app.setSpace(i));
+      t.title = 'Double-click to rename';
+      t.addEventListener('dblclick', () => {
+        const name = window.prompt('Layout name:', l.name);
+        if (name && name.trim()) { l.name = name.trim(); app.doc._changed(); UI.refreshTabs(app); }
+      });
+    });
+    mk('＋', false, () => {
+      app.doc.layouts.push({
+        name: `Layout${app.doc.layouts.length + 1}`,
+        paper: 'letter', landscape: true, entities: [],
+      });
+      app.doc._changed();
+      app.setSpace(app.doc.layouts.length - 1);
+    }, 'add');
+
+    // layout options (paper / orientation)
+    const opts = document.getElementById('layout-opts');
+    const layout = app.doc.activeLayout();
+    opts.hidden = !layout;
+    if (layout) {
+      const sel = document.getElementById('layout-paper');
+      sel.innerHTML = '';
+      for (const name of Object.keys(UNITS.PAPERS)) {
+        const o = document.createElement('option');
+        o.value = name;
+        const [w, h] = UNITS.PAPERS[name];
+        o.textContent = `${name.toUpperCase()} (${w}×${h}")`;
+        sel.appendChild(o);
+      }
+      sel.value = layout.paper;
+      sel.onchange = () => { layout.paper = sel.value; app.doc._changed(); app.vp.zoomExtents(app.activeBBox()); app.requestRender(); };
+      document.getElementById('layout-orient').onclick = () => {
+        layout.landscape = !layout.landscape;
+        app.doc._changed();
+        app.vp.zoomExtents(app.activeBBox());
+        app.requestRender();
+      };
+    }
   },
 
   /* ---- mtext in-canvas editor ---- */

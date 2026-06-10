@@ -124,6 +124,11 @@ const RENDER = {
         }
         break;
       }
+      case 'viewport': {
+        const a = vp.w2s(e.p), b = vp.w2s({ x: e.p.x + e.w, y: e.p.y + e.h });
+        ctx.strokeRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+        break;
+      }
       case 'hatch':
         RENDER.drawHatch(ctx, vp, e, color, lineWidth, dash);
         break;
@@ -326,18 +331,23 @@ const RENDER = {
     ctx.fillStyle = RENDER.COLORS.bg;
     ctx.fillRect(0, 0, vp.w, vp.h);
 
-    RENDER.drawGrid(ctx, vp, doc);
+    const layout = doc.activeLayout ? doc.activeLayout() : null;
+    if (layout) RENDER.drawPaper(ctx, vp, layout);
+    else RENDER.drawGrid(ctx, vp, doc);
 
-    // entities
+    // entities (active space)
     const viewRect = GEO.bbPad(GEO.rectFromPts(vp.s2w({ x: 0, y: 0 }), vp.s2w({ x: vp.w, y: vp.h })), 0);
     for (const e of doc.entities) {
       if (!doc.visible(e)) continue;
       const bb = ENT.bbox(e);
       if (GEO.bbValid(bb) && !GEO.bbOverlap(bb, viewRect)) continue;
+      // viewport contents first so the frame/selection draws on top
+      if (layout && e.type === 'viewport') RENDER.drawViewportContents(ctx, vp, doc, e);
       const sel = doc.selection.has(e.id);
       const ly = doc.layer(e.layer);
       const locked = ly && ly.locked;
       let color = doc.entityColor(e);
+      if (layout) color = RENDER.paperInk(color);
       if (locked) color = RENDER.fade(color);
       if (sel) {
         RENDER.drawEntity(ctx, vp, e, RENDER.COLORS.selection, 2.0, [6, 4]);
@@ -454,6 +464,60 @@ const RENDER = {
       ctx.fillRect(p.x - 3.5, p.y - 3.5, 7, 7);
       ctx.strokeRect(p.x - 3.5, p.y - 3.5, 7, 7);
     }
+  },
+
+  drawPaper(ctx, vp, layout) {
+    const [W, H] = UNITS.paperDims(layout.paper, layout.landscape);
+    const a = vp.w2s({ x: 0, y: 0 }), b = vp.w2s({ x: W, y: H });
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#f2f1ec';
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+    // printable margin
+    const m = 0.4 * vp.scale;
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.setLineDash([5, 5]);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + m, y + m, w - 2 * m, h - 2 * m);
+    ctx.setLineDash([]);
+  },
+
+  // draw model entities through a viewport window, clipped to its frame
+  drawViewportContents(ctx, vp, doc, v) {
+    const a = vp.w2s(v.p), b = vp.w2s({ x: v.p.x + v.w, y: v.p.y + v.h });
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    ctx.clip();
+    const xf = ENT.viewportXf(v);
+    // dim/arrow sizes are globals in model units; scale them into paper units
+    const keep = [ENT.DIM_TEXT, ENT.DIM_ARROW, ENT.DIM_EXT_GAP, ENT.DIM_EXT_OVER];
+    ENT.DIM_TEXT *= v.scale; ENT.DIM_ARROW *= v.scale;
+    ENT.DIM_EXT_GAP *= v.scale; ENT.DIM_EXT_OVER *= v.scale;
+    for (const me of doc.modelEntities) {
+      if (!doc.visible(me)) continue;
+      const ly = doc.layer(me.layer);
+      const clone = ENT.transformed(me, xf);
+      if (me.type === 'dim') clone.$text = ENT.dimGeometry(me).texts[0].text; // keep the true measurement
+      const color = RENDER.paperInk(doc.entityColor(me));
+      const dash = (ly && RENDER.LTYPES[ly.ltype]) || [];
+      RENDER.drawEntity(ctx, vp, clone, color, 1.1 * (ly && ly.lweight ? ly.lweight : 1), dash);
+    }
+    [ENT.DIM_TEXT, ENT.DIM_ARROW, ENT.DIM_EXT_GAP, ENT.DIM_EXT_OVER] = keep;
+    ctx.restore();
+  },
+
+  // near-white ink becomes dark when drawn on the white paper sheet
+  paperInk(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return hex;
+    const v = parseInt(m[1], 16);
+    const r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
+    return (r > 225 && g > 225 && b > 225) ? '#1c1c1c' : hex;
   },
 
   fade(hex) {

@@ -6,7 +6,9 @@
           hatch {boundary:{kind:'poly',pts}|{kind:'circle',c,r}, pattern, spacing, angle}
           insert {name, p, scale, rotation}  (block reference)
           ellipse {c, rx, ry, rot} | leader {pts, text, height}
-          mtext {p (top-left), width, text, height}  (word-wrapped multiline) */
+          mtext {p (top-left), width, text, height}  (word-wrapped multiline)
+          viewport {p (bottom-left, paper in), w, h, center (model), scale (paper/model)}
+            — paper-space only; renders a window into model space */
 'use strict';
 
 let _entSeq = 1;
@@ -102,8 +104,31 @@ const ENT = {
         for (let i = 0; i + 1 < e.pts.length; i++) out.segs.push([e.pts[i], e.pts[i + 1]]);
         break;
       }
+      case 'viewport': {
+        const c = ENT.viewportCorners(e);
+        for (let i = 0; i < 4; i++) out.segs.push([c[i], c[(i + 1) % 4]]);
+        break;
+      }
     }
     return out;
+  },
+
+  viewportCorners(e) {
+    return [
+      { x: e.p.x, y: e.p.y }, { x: e.p.x + e.w, y: e.p.y },
+      { x: e.p.x + e.w, y: e.p.y + e.h }, { x: e.p.x, y: e.p.y + e.h },
+    ];
+  },
+  viewportPaperCenter(e) { return { x: e.p.x + e.w / 2, y: e.p.y + e.h / 2 }; },
+  // transform that maps model coords into this viewport's paper coords
+  viewportXf(e) {
+    const pc = ENT.viewportPaperCenter(e);
+    return {
+      pt: (m) => ({ x: pc.x + (m.x - e.center.x) * e.scale, y: pc.y + (m.y - e.center.y) * e.scale }),
+      ang: (a) => a,
+      scl: e.scale,
+      flip: false,
+    };
   },
 
   /* ---- bounding box ---- */
@@ -181,6 +206,10 @@ const ENT = {
         GEO.bbAddPt(b, { x: e.p.x + e.width, y: e.p.y - lines.length * ENT.MTEXT_LS * e.height });
         break;
       }
+      case 'viewport':
+        GEO.bbAddPt(b, e.p);
+        GEO.bbAddPt(b, { x: e.p.x + e.w, y: e.p.y + e.h });
+        break;
     }
     return b;
   },
@@ -232,6 +261,14 @@ const ENT = {
       }
       case 'mtext':
         return GEO.ptInRect(p, GEO.bbPad(ENT.bbox(e), tol));
+      case 'viewport': {
+        // frame-only hit so clicks inside the window don't grab the viewport
+        const c = ENT.viewportCorners(e);
+        for (let i = 0; i < 4; i++) {
+          if (GEO.distPtSeg(p, c[i], c[(i + 1) % 4]) <= tol) return true;
+        }
+        return false;
+      }
     }
     return false;
   },
@@ -291,6 +328,10 @@ const ENT = {
       case 'mtext':
         push(e.p, 'end');
         push({ x: e.p.x + e.width, y: e.p.y }, 'end');
+        break;
+      case 'viewport':
+        for (const c of ENT.viewportCorners(e)) push(c, 'end');
+        push(ENT.viewportPaperCenter(e), 'center');
         break;
     }
     return out;
@@ -392,6 +433,11 @@ const ENT = {
         e.width *= xf.scl;
         e.height *= xf.scl;
         break;
+      case 'viewport': // axis-aligned; rotation ignored
+        e.p = xf.pt(e.p);
+        e.w *= xf.scl;
+        e.h *= xf.scl;
+        break;
     }
     return e;
   },
@@ -462,6 +508,13 @@ const ENT = {
           if (w > e.height) e.width = w;
         });
         break;
+      case 'viewport': {
+        const c = ENT.viewportCorners(e);
+        add(c[0], p => { const x2 = e.p.x + e.w, y2 = e.p.y + e.h; e.p = { ...p }; e.w = Math.max(0.1, x2 - p.x); e.h = Math.max(0.1, y2 - p.y); });
+        add(c[2], p => { e.w = Math.max(0.1, p.x - e.p.x); e.h = Math.max(0.1, p.y - e.p.y); });
+        add(ENT.viewportPaperCenter(e), p => { e.p = { x: p.x - e.w / 2, y: p.y - e.h / 2 }; });
+        break;
+      }
     }
     return g;
   },
@@ -479,6 +532,7 @@ const ENT = {
       case 'point': e.p = mv(e.p); break;
       case 'text': e.p = mv(e.p); break;
       case 'mtext': e.p = mv(e.p); break;
+      case 'viewport': e.p = mv(e.p); break;
       case 'insert': e.p = mv(e.p); break;
       case 'dim':
         e.p1 = mv(e.p1); e.p2 = mv(e.p2); e.p3 = mv(e.p3);
@@ -570,6 +624,7 @@ const ENT = {
 
   // -> { lines:[{a,b}], arcs:[{c,r,a0,a1}], texts:[{p,text,height,rotation}], arrows:[{p,ang}] }
   // arrow `ang` = world direction from tip toward barbs
+  // e.$text (transient, set on viewport plot clones) overrides the measured text
   dimGeometry(e) {
     const g = { lines: [], arcs: [], texts: [], arrows: [] };
 
@@ -587,7 +642,7 @@ const ENT = {
       const side = e.p3.x >= rim.x ? 1 : -1;
       g.texts.push({
         p: GEO.add(e.p3, { x: side * ENT.DIM_TEXT * 0.4, y: -ENT.DIM_TEXT * 0.35 }),
-        text: prefix + ENT.formatDim(ENT.dimValue(e)),
+        text: e.$text != null ? e.$text : prefix + ENT.formatDim(ENT.dimValue(e)),
         height: ENT.DIM_TEXT,
         rotation: 0,
         align: side >= 0 ? 'left' : 'right',
@@ -609,7 +664,7 @@ const ENT = {
       const amid = a0 + GEO.sweep(a0, a1) / 2;
       g.texts.push({
         p: GEO.polar(e.p1, amid, r + ENT.DIM_TEXT * 1.2),
-        text: ENT.formatNum(ENT.dimValue(e)) + '°', // angles are always decimal degrees
+        text: e.$text != null ? e.$text : ENT.formatNum(ENT.dimValue(e)) + '°', // angles stay decimal degrees
         height: ENT.DIM_TEXT,
         rotation: 0,
         align: 'center',
@@ -648,7 +703,7 @@ const ENT = {
     const up = { x: Math.cos(ta + Math.PI / 2), y: Math.sin(ta + Math.PI / 2) };
     g.texts.push({
       p: GEO.add(mid, GEO.mul(up, ENT.DIM_TEXT * 0.45)),
-      text: ENT.formatDim(ENT.dimValue(e)),
+      text: e.$text != null ? e.$text : ENT.formatDim(ENT.dimValue(e)),
       height: ENT.DIM_TEXT,
       rotation: ta,
       align: 'center',
@@ -778,6 +833,7 @@ const ENT = {
       case 'ellipse': return 'Ellipse';
       case 'leader': return 'Leader';
       case 'mtext': return 'MText';
+      case 'viewport': return `Viewport (${typeof UNITS !== 'undefined' ? UNITS.scaleLabel(1 / e.scale) : e.scale})`;
     }
     return e.type;
   },

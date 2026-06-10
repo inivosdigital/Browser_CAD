@@ -99,6 +99,41 @@ const app = {
     app.requestRender();
   },
 
+  /* ---------- model / paper space ---------- */
+
+  _spaceViews: {},
+
+  activeBBox() {
+    let b = app.doc.bbox();
+    const layout = app.doc.activeLayout();
+    if (layout) {
+      const [W, H] = UNITS.paperDims(layout.paper, layout.landscape);
+      b = GEO.bbValid(b) ? GEO.bbUnion(b, { x1: 0, y1: 0, x2: W, y2: H }) : { x1: 0, y1: 0, x2: W, y2: H };
+    }
+    return b;
+  },
+
+  setSpace(space) {
+    if (app.doc.space === space) return;
+    // remember the camera per space
+    app._spaceViews[String(app.doc.space)] = { scale: app.vp.scale, cx: app.vp.cx, cy: app.vp.cy };
+    app.doc.space = space;
+    app.doc.clearSelection();
+    app.endTool();
+    const saved = app._spaceViews[String(space)];
+    if (saved) {
+      app.vp.scale = saved.scale; app.vp.cx = saved.cx; app.vp.cy = saved.cy;
+    } else {
+      app.vp.zoomExtents(app.activeBBox());
+    }
+    const layout = app.doc.activeLayout();
+    app.print(layout ? `Paper space: ${layout.name} (${layout.paper.toUpperCase()}).` : 'Model space.');
+    UI.refreshTabs(app);
+    UI.refreshProps(app);
+    UI.refreshStatus(app);
+    app.requestRender();
+  },
+
   /* ---------- coordinate input ---------- */
 
   // Lengths accept architectural input everywhere: 42 · 3'6 · 3'-6 1/2" · 18" · 1/2
@@ -322,12 +357,71 @@ const app = {
     document.getElementById('file-input').click();
   },
 
+  fileImportTemplate() {
+    document.getElementById('template-input').click();
+  },
+
+  _importTemplate(name, text) {
+    if (/\.dwt$/i.test(name) || text.slice(0, 6) !== '  0\r\n' && /^AC10\d\d/.test(text.slice(0, 200)) === false && text.indexOf('SECTION') < 0) {
+      app.print('DWT/DWG is a closed binary format. In AutoCAD: SAVEAS → "AutoCAD 2000 DXF" once, then import that file.', 'err');
+      return;
+    }
+    try {
+      const res = DXF.importText(text);
+      const layout = app.doc.activeLayout() || app.doc.layouts[0];
+      const src = res.paperEntities.length ? res.paperEntities : res.entities;
+      if (!src.length) { app.print('No usable entities found in the template.', 'err'); return; }
+      app.doc.checkpoint();
+      for (const [bn, bdef] of Object.entries(res.blocks || {})) {
+        if (!app.doc.blocks[bn]) app.doc.blocks[bn] = bdef;
+      }
+      for (const ly of res.layers) if (!app.doc.layer(ly.name)) app.doc.layers.push(ly);
+      layout.entities = src;
+      // size the sheet to the title block extents
+      let bb = GEO.bbEmpty();
+      for (const e of src) bb = GEO.bbUnion(bb, ENT.bbox(e));
+      if (GEO.bbValid(bb)) {
+        const w = bb.x2 - bb.x1, h = bb.y2 - bb.y1;
+        let best = 'letter', bestErr = Infinity;
+        for (const [pname, dims] of Object.entries(UNITS.PAPERS)) {
+          for (const land of [false, true]) {
+            const [W, H] = land ? [dims[1], dims[0]] : dims;
+            if (W >= w - 0.6 && H >= h - 0.6) {
+              const err = (W - w) + (H - h);
+              if (err < bestErr) { bestErr = err; best = pname; layout.landscape = land; }
+            }
+          }
+        }
+        layout.paper = best;
+        // shift the title block to the sheet origin
+        if (Math.abs(bb.x1) > 1e-6 || Math.abs(bb.y1) > 1e-6) {
+          const xf = ENT.xfTranslate({ x: -bb.x1, y: -bb.y1 });
+          for (const e of layout.entities) ENT.transform(e, xf);
+        }
+      }
+      app.doc._changed();
+      const idx = app.doc.layouts.indexOf(layout);
+      if (app.doc.space !== idx) app.setSpace(idx);
+      else { app.vp.zoomExtents(app.activeBBox()); app.requestRender(); }
+      UI.refreshLayers(app);
+      UI.refreshTabs(app);
+      app.print(`Template imported: ${src.length} entities → ${layout.name} (${layout.paper.toUpperCase()} ${layout.landscape ? 'landscape' : 'portrait'}).`);
+    } catch (err) {
+      app.print(`Could not import template: ${err.message}`, 'err');
+    }
+  },
+
   _openText(name, text) {
     try {
       if (/\.dxf$/i.test(name)) {
         const res = DXF.importText(text);
-        if (!res.entities.length) { app.print('No supported entities found in DXF.', 'err'); return; }
+        if (!res.entities.length && !res.paperEntities.length) { app.print('No supported entities found in DXF.', 'err'); return; }
         app.doc.loadJSON({ entities: res.entities, layers: res.layers.length ? res.layers : undefined });
+        app.doc.blocks = res.blocks || {};
+        if (res.paperEntities.length) {
+          app.doc.layouts[0].entities = res.paperEntities;
+          app.print(`${res.paperEntities.length} paper-space entities loaded into ${app.doc.layouts[0].name}.`);
+        }
         if (!app.doc.layer('0')) app.doc.layers.unshift({ name: '0', color: '#ffffff', visible: true, locked: false });
         // make sure every entity's layer exists
         for (const e of app.doc.entities) if (!app.doc.layer(e.layer)) app.doc.addLayer(e.layer);
@@ -386,10 +480,11 @@ function initApp() {
   app.doc.onChange = () => {
     ENT.units = app.doc.settings.units || 'decimal';
     const ds = app.doc.settings.dimStyle || {};
-    ENT.DIM_TEXT = ds.textHeight || 2.5;
-    ENT.DIM_ARROW = ds.arrow || 2.5;
-    ENT.DIM_EXT_GAP = ds.extGap == null ? 1.0 : ds.extGap;
-    ENT.DIM_EXT_OVER = ds.extOver == null ? 1.2 : ds.extOver;
+    const as = app.doc.settings.annoScale || 1; // annotative sizes scale with CANNOSCALE
+    ENT.DIM_TEXT = (ds.textHeight || 2.5) * as;
+    ENT.DIM_ARROW = (ds.arrow || 2.5) * as;
+    ENT.DIM_EXT_GAP = (ds.extGap == null ? 1.0 : ds.extGap) * as;
+    ENT.DIM_EXT_OVER = (ds.extOver == null ? 1.2 : ds.extOver) * as;
     ENT.dimPrecision = ds.precision == null ? 2 : ds.precision;
     app.requestRender();
     UI.refreshProps(app);
@@ -398,6 +493,7 @@ function initApp() {
   };
 
   UI.init(app);
+  UI.refreshTabs(app);
 
   const restored = app._tryRestoreAutosave();
   app.tool = TOOLS.select();
@@ -631,6 +727,19 @@ function initApp() {
   });
 
   /* ----- file input ----- */
+  document.getElementById('template-input').addEventListener('change', (ev) => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    if (/\.(dwt|dwg)$/i.test(f.name)) {
+      app.print(`${f.name} is binary DWG (closed format). In AutoCAD run SAVEAS → "AutoCAD 2000 DXF" on the template once, then import the .dxf here.`, 'err');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => app._importTemplate(f.name, reader.result);
+    reader.readAsText(f);
+  });
+
   document.getElementById('file-input').addEventListener('change', (ev) => {
     const f = ev.target.files[0];
     ev.target.value = '';

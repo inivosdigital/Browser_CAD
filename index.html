@@ -19,6 +19,7 @@
       <button data-cmd="save">Save (.json) <kbd>Ctrl+S</kbd></button>
       <button data-cmd="dxfout">Export DXF (R12)</button>
       <button data-cmd="plot">Plot to PDF&hellip;</button>
+      <button data-cmd="template">Import Template (DXF)&hellip;</button>
     </div>
   </div>
 
@@ -42,6 +43,8 @@
       <button data-cmd="polar">Toggle Polar Tracking <kbd>F10</kbd></button>
       <button data-cmd="otrack">Toggle Object Snap Tracking <kbd>F11</kbd></button>
       <button data-cmd="dimstyle">Dimension Style&hellip;</button>
+      <button data-cmd="annoscale">Annotation Scale&hellip;</button>
+      <button data-cmd="mview">New Viewport (MVIEW)</button>
       <button data-cmd="units">Toggle Units (decimal / feet-inches)</button>
       <button data-cmd="dyn">Toggle Dynamic Input <kbd>F12</kbd></button>
       <button data-cmd="osnap">Toggle Object Snap <kbd>F3</kbd></button>
@@ -81,6 +84,14 @@
   </aside>
 </div>
 
+<div id="tabs-bar">
+  <div id="space-tabs"></div>
+  <div id="layout-opts" hidden>
+    <select id="layout-paper" title="Paper size"></select>
+    <button id="layout-orient" class="icon-btn" title="Toggle orientation">⟳</button>
+  </div>
+</div>
+
 <div id="cmdpanel">
   <div id="cmd-history"></div>
   <div id="cmd-suggest" hidden></div>
@@ -101,6 +112,8 @@
   <button id="tog-dyn" class="sb-toggle" title="Dynamic input (F12)">DYN</button>
   <button id="tog-osnap" class="sb-toggle" title="Object snap (F3)">OSNAP</button>
   <span class="spacer"></span>
+  <button id="anno-scale" class="sb-toggle" title="Annotation scale (ANNOSCALE)">1:1</button>
+  <span class="sb-sep"></span>
   <span class="sb-info">Layer: <span id="cur-layer-swatch"></span><span id="cur-layer">0</span></span>
   <span class="sb-sep"></span>
   <span id="zoom-level" class="sb-info">100%</span>
@@ -134,6 +147,7 @@
 </div>
 
 <input type="file" id="file-input" accept=".json,.dxf" hidden>
+<input type="file" id="template-input" accept=".dxf,.dwt,.dwg" hidden>
 
 <script src="js/geometry.js"></script>
 <script src="js/units.js"></script>
