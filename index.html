@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BrowserCAD — 2D CAD in your browser</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header id="menubar">
+  <div class="brand">Browser<span>CAD</span></div>
+
+  <div class="menu">
+    <div class="menu-label">File</div>
+    <div class="dropdown">
+      <button data-cmd="new">New <kbd></kbd></button>
+      <button data-cmd="open">Open… (.json / .dxf) <kbd>Ctrl+O</kbd></button>
+      <button data-cmd="save">Save (.json) <kbd>Ctrl+S</kbd></button>
+      <button data-cmd="dxfout">Export DXF (R12)</button>
+    </div>
+  </div>
+
+  <div class="menu">
+    <div class="menu-label">Edit</div>
+    <div class="dropdown">
+      <button data-cmd="undo">Undo <kbd>Ctrl+Z</kbd></button>
+      <button data-cmd="redo">Redo <kbd>Ctrl+Y</kbd></button>
+      <button data-cmd="selectall">Select All <kbd>Ctrl+A</kbd></button>
+      <button data-cmd="erase">Erase Selection <kbd>Del</kbd></button>
+    </div>
+  </div>
+
+  <div class="menu">
+    <div class="menu-label">View</div>
+    <div class="dropdown">
+      <button data-cmd="zoom">Zoom Extents <kbd>Z</kbd></button>
+      <button data-cmd="grid">Toggle Grid <kbd>F7</kbd></button>
+      <button data-cmd="snap">Toggle Grid Snap <kbd>F9</kbd></button>
+      <button data-cmd="ortho">Toggle Ortho <kbd>F8</kbd></button>
+      <button data-cmd="osnap">Toggle Object Snap <kbd>F3</kbd></button>
+    </div>
+  </div>
+
+  <div class="menu">
+    <div class="menu-label">Help</div>
+    <div class="dropdown">
+      <button data-cmd="help">Command Reference <kbd>F1</kbd></button>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+  <div id="doc-title">untitled.json</div>
+</header>
+
+<div id="main">
+  <aside id="toolbar"></aside>
+
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <aside id="sidebar">
+    <section class="panel">
+      <div class="panel-header">
+        Layers
+        <button id="layer-add" class="icon-btn" title="New layer">＋</button>
+      </div>
+      <div id="layers-list"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-header">Properties</div>
+      <div id="props-body"></div>
+    </section>
+  </aside>
+</div>
+
+<div id="cmdpanel">
+  <div id="cmd-history"></div>
+  <div id="cmd-row">
+    <span id="cmd-prompt">Command:</span>
+    <input id="cmd-input" autocomplete="off" spellcheck="false">
+  </div>
+</div>
+
+<footer id="statusbar">
+  <span id="coords">0.0000, 0.0000</span>
+  <span class="sb-sep"></span>
+  <button id="tog-grid" class="sb-toggle" title="Grid (F7)">GRID</button>
+  <button id="tog-snap" class="sb-toggle" title="Grid snap (F9)">SNAP</button>
+  <button id="tog-ortho" class="sb-toggle" title="Ortho (F8)">ORTHO</button>
+  <button id="tog-osnap" class="sb-toggle" title="Object snap (F3)">OSNAP</button>
+  <span class="spacer"></span>
+  <span class="sb-info">Layer: <span id="cur-layer-swatch"></span><span id="cur-layer">0</span></span>
+  <span class="sb-sep"></span>
+  <span id="zoom-level" class="sb-info">100%</span>
+</footer>
+
+<div id="help-modal" hidden>
+  <div id="help-card">
+    <div id="help-header">
+      BrowserCAD — Command Reference
+      <button id="help-close" class="icon-btn">✕</button>
+    </div>
+    <div id="help-body"></div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept=".json,.dxf" hidden>
+
+<script src="js/geometry.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/document.js"></script>
+<script src="js/viewport.js"></script>
+<script src="js/snap.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/dxf.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
