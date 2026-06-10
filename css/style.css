@@ -161,7 +161,7 @@ kbd { color: var(--fg1); font: 11px monospace; margin-left: auto; padding-left: 
 /* ---------- sidebar ---------- */
 
 #sidebar {
-  width: 232px;
+  width: 268px;
   flex: 0 0 auto;
   background: var(--bg1);
   border-left: 1px solid var(--edge);
@@ -214,6 +214,12 @@ kbd { color: var(--fg1); font: 11px monospace; margin-left: auto; padding-left: 
   white-space: nowrap;
 }
 .layer-name:hover { color: var(--accent); }
+.layer-mini {
+  width: 44px;
+  padding: 1px 2px;
+  font-size: 10.5px;
+  background: var(--bg0);
+}
 
 #props-body { padding: 6px 8px 10px; }
 .prop-row {

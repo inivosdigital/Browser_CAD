@@ -7,7 +7,7 @@ class CadDocument {
   constructor() {
     this.entities = [];
     this.blocks = {}; // name -> { name, base:{x,y}, entities:[...] }
-    this.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false }];
+    this.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, ltype: 'continuous', lweight: 1 }];
     this.currentLayer = '0';
     this.selection = new Set(); // entity ids
     this.undoStack = [];
@@ -25,6 +25,8 @@ class CadDocument {
       gridStep: 10,
       textHeight: 2.5,
       filletRadius: 0,
+      chamferD1: 0,
+      chamferD2: 0,
       offsetDist: 10,
     };
     this.onChange = null; // callback(doc)
@@ -37,7 +39,7 @@ class CadDocument {
   addLayer(name) {
     if (this.layer(name)) return null;
     const color = DEFAULT_LAYER_COLORS[this.layers.length % DEFAULT_LAYER_COLORS.length];
-    const l = { name, color, visible: true, locked: false };
+    const l = { name, color, visible: true, locked: false, ltype: 'continuous', lweight: 1 };
     this.layers.push(l);
     this._changed();
     return l;
@@ -168,6 +170,10 @@ class CadDocument {
     this.blocks = data.blocks || {};
     this.layers = (data.layers && data.layers.length) ? data.layers : [{ name: '0', color: '#ffffff', visible: true, locked: false }];
     if (!this.layer('0')) this.layers.unshift({ name: '0', color: '#ffffff', visible: true, locked: false });
+    for (const l of this.layers) {
+      if (!l.ltype) l.ltype = 'continuous';
+      if (!l.lweight) l.lweight = 1;
+    }
     this.currentLayer = this.layer(data.currentLayer) ? data.currentLayer : '0';
     if (data.settings) Object.assign(this.settings, data.settings);
     let maxId = 0;
@@ -186,7 +192,7 @@ class CadDocument {
   clear() {
     this.entities = [];
     this.blocks = {};
-    this.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false }];
+    this.layers = [{ name: '0', color: '#ffffff', visible: true, locked: false, ltype: 'continuous', lweight: 1 }];
     this.currentLayer = '0';
     this.selection.clear();
     this.undoStack.length = 0;

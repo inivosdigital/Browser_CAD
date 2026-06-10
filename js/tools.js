@@ -726,10 +726,11 @@ function makeDimTool(name, aligned) {
         app.prompt('Specify dimension line location:');
       } else {
         app.doc.checkpoint();
-        app.doc.add(makeEntity('dim', {
+        const dim = app.doc.add(makeEntity('dim', {
           dtype: this._dtype(pt), p1: { ...this.p1 }, p2: { ...this.p2 }, p3: { ...pt },
           layer: app.doc.currentLayer,
         }));
+        app.lastDimId = dim.id;
         app.endTool();
       }
     },
@@ -1349,7 +1350,7 @@ TOOLS.array = () => ({
 TOOLS.hatch = () => ({
   name: 'hatch',
   stage: 'pick',
-  boundary: null, pattern: 'lines', spacing: 5,
+  boundary: null, pattern: 'lines', spacing: 5, angle: null,
   start(app) { app.prompt('HATCH — Select a closed boundary (circle or closed polyline):'); },
   click(app) {
     if (this.stage !== 'pick') return;
@@ -1379,6 +1380,16 @@ TOOLS.hatch = () => ({
         if (n === null || n <= 0) { app.print('Enter a positive number.'); return true; }
         this.spacing = n;
       }
+      this.stage = 'angle';
+      app.prompt('Pattern angle (degrees) <45>:');
+      return true;
+    }
+    if (this.stage === 'angle') {
+      if (raw !== '') {
+        const n = parseFloat(raw);
+        if (Number.isNaN(n)) { app.print('Enter an angle in degrees.'); return true; }
+        this.angle = n * Math.PI / 180;
+      }
       this._make(app);
       return true;
     }
@@ -1389,7 +1400,7 @@ TOOLS.hatch = () => ({
     app.doc.checkpoint();
     app.doc.add(makeEntity('hatch', {
       boundary: this.boundary, pattern: this.pattern, spacing: this.spacing,
-      angle: Math.PI / 4, layer: app.doc.currentLayer,
+      angle: this.angle == null ? Math.PI / 4 : this.angle, layer: app.doc.currentLayer,
     }));
     app.endTool();
   },
@@ -1593,7 +1604,7 @@ TOOLS.dimangular = () => ({
 TOOLS.plot = () => ({
   name: 'plot',
   stage: 'area',
-  win: null, c1: null,
+  win: null, c1: null, paper: 'a4',
   start(app) {
     if (!app.doc.entities.length) { app.print('Nothing to plot.'); app.endTool(); return; }
     app.prompt('PLOT — Area [Extents/Window] <E>:');
@@ -1618,15 +1629,30 @@ TOOLS.plot = () => ({
       return true;
     }
     if (this.stage === 'paper') {
-      let paper = 'a4';
-      if (u === 'a3') paper = 'a3';
-      else if (u === 'letter' || u === 'l') paper = 'letter';
-      else if (u !== '' && u !== 'a4') { app.print('Enter A4, A3, or Letter.'); return true; }
+      if (u === 'a3') this.paper = 'a3';
+      else if (u === 'letter' || u === 'l') this.paper = 'letter';
+      else if (u === '' || u === 'a4') this.paper = 'a4';
+      else { app.print('Enter A4, A3, or Letter.'); return true; }
+      this.stage = 'scale';
+      app.prompt('Plot scale [Fit / 1:n / x/y inches per foot] <Fit>:');
+      return true;
+    }
+    if (this.stage === 'scale') {
+      let fixedScale = null;
+      if (u !== '' && u !== 'f' && u !== 'fit') {
+        let m = /^1\s*[:=]\s*(\d+(?:\.\d+)?)$/.exec(u);
+        if (m) fixedScale = 1 / parseFloat(m[1]);
+        else {
+          m = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)"?$/.exec(u);
+          if (m) fixedScale = (parseFloat(m[1]) / parseFloat(m[2])) / 12; // x/y inch = 1 foot
+          else { app.print('Enter Fit, 1:n (e.g. 1:50), or a fraction like 1/4 (= 1/4 inch per foot).'); return true; }
+        }
+      }
       const rect = this.win || app.doc.bbox();
       if (!GEO.bbValid(rect)) { app.print('Nothing to plot.'); app.endTool(); return true; }
       const name = app.docName.replace(/\.(json|dxf|pdf)$/i, '') + '.pdf';
-      app._download(name, PDF.generate(app.doc, rect, paper), 'application/pdf');
-      app.print(`Plotted to ${name} (${paper.toUpperCase()}).`);
+      app._download(name, PDF.generate(app.doc, rect, this.paper, fixedScale), 'application/pdf');
+      app.print(`Plotted to ${name} (${this.paper.toUpperCase()}${fixedScale ? `, scale ${u}` : ', fit'}).`);
       app.endTool();
       return true;
     }
@@ -1645,6 +1671,539 @@ TOOLS.plot = () => ({
   },
 });
 
+/* ================= ellipse ================= */
+
+TOOLS.ellipse = () => ({
+  name: 'ellipse',
+  stage: 'center',
+  c: null, rx: 0, rot: 0,
+  start(app) { app.prompt('ELLIPSE — Specify center point:'); },
+  click(app, pt) {
+    if (this.stage === 'center') {
+      this.c = pt; app.lastPoint = pt;
+      this.stage = 'axis';
+      app.prompt('Specify end of first axis:');
+    } else if (this.stage === 'axis') {
+      this.rx = GEO.dist(this.c, pt);
+      if (this.rx <= 1e-9) return;
+      this.rot = GEO.ang(this.c, pt);
+      this.stage = 'other';
+      app.prompt('Specify other axis distance:');
+    } else {
+      this._make(app, GEO.dist(this.c, pt));
+    }
+  },
+  _make(app, ry) {
+    if (ry <= 1e-9) { app.print('Axis distance must be positive.'); return; }
+    app.doc.checkpoint();
+    app.doc.add(makeEntity('ellipse', { c: { ...this.c }, rx: this.rx, ry, rot: this.rot, layer: app.doc.currentLayer }));
+    app.endTool();
+  },
+  input(app, raw) {
+    if (this.stage === 'axis' && raw !== '') {
+      const n = parseDist(raw);
+      if (n !== null && n > 0) { this.rx = n; this.rot = 0; this.stage = 'other'; app.prompt('Specify other axis distance:'); return true; }
+    }
+    if (this.stage === 'other' && raw !== '') {
+      const n = parseDist(raw);
+      if (n !== null) { this._make(app, n); return true; }
+    }
+    if (raw === '') { app.endTool(); return true; }
+    return false;
+  },
+  preview(ctx, app) {
+    const p = app.pointer.snapped;
+    if (this.stage === 'axis') RENDER.previewEntity(ctx, app.vp, { type: 'line', a: this.c, b: p });
+    else if (this.stage === 'other') {
+      RENDER.previewEntity(ctx, app.vp, { type: 'ellipse', c: this.c, rx: this.rx, ry: Math.max(GEO.dist(this.c, p), 1e-6), rot: this.rot });
+    }
+  },
+});
+
+/* ================= leader ================= */
+
+TOOLS.leader = () => ({
+  name: 'leader',
+  pts: [],
+  rawInput: false,
+  start(app) { this.pts = []; app.prompt('LEADER — Specify arrowhead point:'); },
+  click(app, pt) {
+    if (this.rawInput) return;
+    if (this.pts.length && GEO.eq(this.pts[this.pts.length - 1], pt)) return;
+    this.pts.push(pt);
+    app.lastPoint = pt;
+    app.prompt(this.pts.length < 2 ? 'Specify next point:' : 'Specify next point or Enter for text:');
+  },
+  input(app, raw) {
+    if (this.rawInput) {
+      if (raw.trim() === '') { app.endTool(); return true; }
+      app.doc.checkpoint();
+      app.doc.add(makeEntity('leader', {
+        pts: this.pts.map(p => ({ ...p })), text: raw, height: app.doc.settings.textHeight,
+        layer: app.doc.currentLayer,
+      }));
+      app.endTool();
+      return true;
+    }
+    if (raw === '') {
+      if (this.pts.length < 2) { app.endTool(); return true; }
+      this.rawInput = true;
+      app.prompt('Enter leader text:');
+      return true;
+    }
+    return false;
+  },
+  preview(ctx, app) {
+    if (!this.pts.length) return;
+    const pts = this.rawInput ? this.pts : [...this.pts, app.pointer.snapped];
+    if (pts.length >= 2) {
+      RENDER.previewEntity(ctx, app.vp, { type: 'leader', pts, text: '…', height: app.doc.settings.textHeight });
+    }
+  },
+});
+
+/* ================= break ================= */
+
+function breakEntity(app, e, p1, p2) {
+  const props = { layer: e.layer, color: e.color };
+  const atPoint = GEO.eq(p1, p2, 1e-9);
+
+  if (e.type === 'line') {
+    let t1 = GEO.segParam(p1, e.a, e.b), t2 = GEO.segParam(p2, e.a, e.b);
+    if (t2 < t1) { const t = t1; t1 = t2; t2 = t; }
+    const P = (t) => GEO.lerp(e.a, e.b, t);
+    const out = [];
+    if (t1 > 1e-9) out.push(makeEntity('line', { a: { ...e.a }, b: P(t1), ...props }));
+    if (t2 < 1 - 1e-9) out.push(makeEntity('line', { a: P(t2), b: { ...e.b }, ...props }));
+    app.doc.checkpoint();
+    app.doc.remove([e.id]);
+    out.forEach(x => app.doc.add(x));
+    return true;
+  }
+
+  if (e.type === 'circle') {
+    if (atPoint) { app.print('Cannot break a circle at a single point.'); return false; }
+    // remove CCW from p1 to p2 (AutoCAD convention)
+    const a1 = GEO.ang(e.c, p1), a2 = GEO.ang(e.c, p2);
+    app.doc.checkpoint();
+    app.doc.remove([e.id]);
+    app.doc.add(makeEntity('arc', { c: { ...e.c }, r: e.r, a0: GEO.normAng(a2), a1: GEO.normAng(a1), ...props }));
+    return true;
+  }
+
+  if (e.type === 'arc') {
+    const sweep = GEO.sweep(e.a0, e.a1);
+    const clampRel = (p) => Math.max(0, Math.min(sweep, GEO.normAng(GEO.ang(e.c, p) - e.a0)));
+    let r1 = clampRel(p1), r2 = clampRel(p2);
+    if (r2 < r1) { const t = r1; r1 = r2; r2 = t; }
+    const out = [];
+    if (r1 > 1e-9) out.push(makeEntity('arc', { c: { ...e.c }, r: e.r, a0: e.a0, a1: GEO.normAng(e.a0 + r1), ...props }));
+    if (r2 < sweep - 1e-9) out.push(makeEntity('arc', { c: { ...e.c }, r: e.r, a0: GEO.normAng(e.a0 + r2), a1: e.a1, ...props }));
+    app.doc.checkpoint();
+    app.doc.remove([e.id]);
+    out.forEach(x => app.doc.add(x));
+    return true;
+  }
+
+  if (e.type === 'polyline' && !e.closed) {
+    const pts = e.pts;
+    const nSeg = pts.length - 1;
+    const paramOf = (p) => {
+      let best = 0, bd = Infinity;
+      for (let i = 0; i < nSeg; i++) {
+        const t = GEO.segParam(p, pts[i], pts[i + 1]);
+        const dd = GEO.dist(p, GEO.lerp(pts[i], pts[i + 1], t));
+        if (dd < bd) { bd = dd; best = i + t; }
+      }
+      return best;
+    };
+    let t1 = paramOf(p1), t2 = paramOf(p2);
+    if (t2 < t1) { const t = t1; t1 = t2; t2 = t; }
+    const ptAt = (t) => {
+      const i = Math.min(nSeg - 1, Math.floor(t));
+      return GEO.lerp(pts[i], pts[i + 1], t - i);
+    };
+    const piece = (a, b) => {
+      const arr = [ptAt(a)];
+      for (let i = Math.floor(a) + 1; i <= Math.floor(b - 1e-9); i++) arr.push({ ...pts[i] });
+      const end = ptAt(b);
+      if (!GEO.eq(arr[arr.length - 1], end)) arr.push(end);
+      return arr;
+    };
+    const out = [];
+    const left = piece(0, t1), right = piece(t2, nSeg);
+    if (left.length >= 2) out.push(makeEntity('polyline', { pts: left, closed: false, ...props }));
+    if (right.length >= 2) out.push(makeEntity('polyline', { pts: right, closed: false, ...props }));
+    app.doc.checkpoint();
+    app.doc.remove([e.id]);
+    out.forEach(x => app.doc.add(x));
+    return true;
+  }
+
+  app.print(`Cannot break a ${e.type}.`);
+  return false;
+}
+
+TOOLS.break = () => ({
+  name: 'break',
+  stage: 'pick',
+  target: null, p1: null,
+  start(app) { app.prompt('BREAK — Select object (pick point = first break point):'); },
+  click(app, pt) {
+    if (this.stage === 'pick') {
+      const e = SEL.hitAt(app, app.pointer.raw);
+      if (!e) { app.print('No object found.'); return; }
+      this.target = e;
+      this.p1 = { ...app.pointer.raw };
+      this.stage = 'second';
+      app.prompt('Specify second break point, or [First] / @ to split at point:');
+    } else if (this.stage === 'first') {
+      this.p1 = { ...pt };
+      this.stage = 'second';
+      app.prompt('Specify second break point (@ to split at point):');
+    } else if (this.stage === 'second') {
+      if (breakEntity(app, this.target, this.p1, pt)) app.endTool();
+    }
+  },
+  input(app, raw) {
+    const u = raw.toLowerCase();
+    if (this.stage === 'second' && (u === 'f' || u === 'first')) {
+      this.stage = 'first';
+      app.prompt('Specify first break point:');
+      return true;
+    }
+    if (this.stage === 'second' && u === '@') {
+      if (breakEntity(app, this.target, this.p1, this.p1)) app.endTool();
+      return true;
+    }
+    if (raw === '') { app.endTool(); return true; }
+    return false;
+  },
+});
+
+/* ================= join ================= */
+
+function joinSelection(app) {
+  const sel = app.doc.selectedEntities();
+  const eps = 1e-6;
+  const paths = [];   // open point chains from lines / open polylines
+  const arcs = [];
+  const consumed = [];
+  for (const e of sel) {
+    if (e.type === 'line') { paths.push([{ ...e.a }, { ...e.b }]); consumed.push(e.id); }
+    else if (e.type === 'polyline' && !e.closed) { paths.push(e.pts.map(p => ({ ...p }))); consumed.push(e.id); }
+    else if (e.type === 'arc') { arcs.push(e); consumed.push(e.id); }
+  }
+  if (consumed.length < 2 && !(arcs.length === 1 && consumed.length === 1)) {
+    app.print('Select two or more lines, open polylines, or coincident arcs.');
+    return;
+  }
+
+  const results = [];
+
+  // merge arcs sharing center+radius into contiguous spans (or a circle)
+  const arcGroups = [];
+  for (const a of arcs) {
+    let grp = arcGroups.find(g => GEO.eq(g[0].c, a.c, eps) && Math.abs(g[0].r - a.r) < eps);
+    if (!grp) { grp = []; arcGroups.push(grp); }
+    grp.push(a);
+  }
+  for (const grp of arcGroups) {
+    let spans = grp.map(a => ({ a0: a.a0, sweep: GEO.sweep(a.a0, a.a1) }));
+    let merged = true;
+    while (merged && spans.length > 1) {
+      merged = false;
+      outer:
+      for (let i = 0; i < spans.length; i++) {
+        for (let j = 0; j < spans.length; j++) {
+          if (i === j) continue;
+          const rel = GEO.normAng(spans[j].a0 - spans[i].a0);
+          if (rel <= spans[i].sweep + 1e-6) { // j starts inside/at end of i
+            const total = Math.max(spans[i].sweep, rel + spans[j].sweep);
+            spans[i] = { a0: spans[i].a0, sweep: Math.min(total, Math.PI * 2) };
+            spans.splice(j, 1);
+            merged = true;
+            break outer;
+          }
+        }
+      }
+    }
+    const src = grp[0];
+    if (spans.length === 1 && spans[0].sweep >= Math.PI * 2 - 1e-6) {
+      results.push(makeEntity('circle', { c: { ...src.c }, r: src.r, layer: src.layer, color: src.color }));
+    } else {
+      for (const s of spans) {
+        results.push(makeEntity('arc', { c: { ...src.c }, r: src.r, a0: GEO.normAng(s.a0), a1: GEO.normAng(s.a0 + s.sweep), layer: src.layer, color: src.color }));
+      }
+    }
+  }
+
+  // chain lines / polylines by shared endpoints
+  const chains = [];
+  const pool = paths.slice();
+  while (pool.length) {
+    let chain = pool.shift();
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (let i = 0; i < pool.length; i++) {
+        const c = pool[i];
+        const h = chain[0], t = chain[chain.length - 1];
+        if (GEO.eq(c[0], t, eps)) { chain = chain.concat(c.slice(1)); }
+        else if (GEO.eq(c[c.length - 1], t, eps)) { chain = chain.concat(c.slice(0, -1).reverse()); }
+        else if (GEO.eq(c[c.length - 1], h, eps)) { chain = c.slice(0, -1).concat(chain); }
+        else if (GEO.eq(c[0], h, eps)) { chain = c.slice(1).reverse().concat(chain); }
+        else continue;
+        pool.splice(i, 1);
+        grew = true;
+        break;
+      }
+    }
+    chains.push(chain);
+  }
+  const srcStyle = sel.find(e => e.type === 'line' || e.type === 'polyline');
+  for (const chain of chains) {
+    const closed = chain.length > 3 && GEO.eq(chain[0], chain[chain.length - 1], eps);
+    const pts = closed ? chain.slice(0, -1) : chain;
+    if (pts.length === 2) {
+      results.push(makeEntity('line', { a: pts[0], b: pts[1], layer: srcStyle.layer, color: srcStyle.color }));
+    } else if (pts.length > 2) {
+      results.push(makeEntity('polyline', { pts, closed, layer: srcStyle.layer, color: srcStyle.color }));
+    }
+  }
+
+  if (results.length >= consumed.length) {
+    app.print('Nothing could be joined (no shared endpoints).');
+    return;
+  }
+  app.doc.checkpoint();
+  app.doc.remove(consumed);
+  results.forEach(r => app.doc.add(r));
+  app.print(`Joined into ${results.length} object(s).`);
+  app.onSelectionChange();
+}
+
+TOOLS.join = makeImmediateTool('join', 'JOIN', joinSelection);
+
+/* ================= stretch ================= */
+
+TOOLS.stretch = () => ({
+  name: 'stretch',
+  stage: 'w1',
+  rect: null, c1: null, base: null,
+  start(app) { app.prompt('STRETCH — Specify first corner of crossing window:'); },
+  click(app, pt) {
+    if (this.stage === 'w1') {
+      this.c1 = pt;
+      this.stage = 'w2';
+      app.prompt('Specify opposite corner:');
+    } else if (this.stage === 'w2') {
+      this.rect = GEO.rectFromPts(this.c1, pt);
+      const n = this._affected(app).length;
+      if (!n) { app.print('No objects cross the window.'); this.stage = 'w1'; app.prompt('Specify first corner of crossing window:'); return; }
+      this.stage = 'base';
+      app.prompt(`${n} object(s) — Specify base point:`);
+    } else if (this.stage === 'base') {
+      this.base = pt; app.lastPoint = pt;
+      this.stage = 'dest';
+      app.prompt('Specify second point:');
+    } else if (this.stage === 'dest') {
+      const d = GEO.sub(pt, this.base);
+      app.doc.checkpoint();
+      for (const e of this._affected(app)) ENT.stretch(e, this.rect, d);
+      app.doc._changed();
+      app.print('Stretch complete.');
+      app.endTool();
+    }
+  },
+  _affected(app) {
+    return app.doc.entities.filter(e => app.doc.selectable(e) && ENT.inRect(e, this.rect, true));
+  },
+  input(app, raw) { if (raw === '') { app.endTool(); return true; } return false; },
+  preview(ctx, app) {
+    const p = app.pointer.snapped;
+    if (this.stage === 'w2') {
+      RENDER.previewEntity(ctx, app.vp, {
+        type: 'polyline', pts: [this.c1, { x: p.x, y: this.c1.y }, p, { x: this.c1.x, y: p.y }], closed: true,
+      });
+    } else if (this.stage === 'dest') {
+      const d = GEO.sub(p, this.base);
+      for (const e of this._affected(app)) {
+        RENDER.ghostEntity(ctx, app.vp, ENT.stretch(ENT.clone(e), this.rect, d));
+      }
+      RENDER.previewEntity(ctx, app.vp, { type: 'line', a: this.base, b: p });
+    }
+  },
+});
+
+/* ================= chamfer ================= */
+
+function chamferLines(app, e1, pick1, e2, pick2, d1, d2) {
+  const X = GEO.lineLine(e1.a, e1.b, e2.a, e2.b);
+  if (!X) { app.print('Lines are parallel — cannot chamfer.'); return false; }
+  const keepEnd = (e, pick) => (GEO.lineParam(pick, e.a, e.b) <= GEO.lineParam(X, e.a, e.b) ? 'a' : 'b');
+  const k1 = keepEnd(e1, pick1), k2 = keepEnd(e2, pick2);
+  const K1 = e1[k1], K2 = e2[k2];
+  app.doc.checkpoint();
+  if (d1 <= 1e-9 && d2 <= 1e-9) {
+    if (k1 === 'a') e1.b = { ...X }; else e1.a = { ...X };
+    if (k2 === 'a') e2.b = { ...X }; else e2.a = { ...X };
+    app.doc._changed();
+    return true;
+  }
+  if (d1 > GEO.dist(X, K1) + 1e-9 || d2 > GEO.dist(X, K2) + 1e-9) {
+    app.print('Chamfer distances are too large for these lines.');
+    app.doc.undo();
+    return false;
+  }
+  const T1 = GEO.add(X, GEO.mul(GEO.norm(GEO.sub(K1, X)), d1));
+  const T2 = GEO.add(X, GEO.mul(GEO.norm(GEO.sub(K2, X)), d2));
+  if (k1 === 'a') { e1.a = K1; e1.b = T1; } else { e1.a = T1; e1.b = K1; }
+  if (k2 === 'a') { e2.a = K2; e2.b = T2; } else { e2.a = T2; e2.b = K2; }
+  app.doc.add(makeEntity('line', { a: T1, b: T2, layer: e1.layer, color: e1.color }));
+  return true;
+}
+
+TOOLS.chamfer = () => ({
+  name: 'chamfer',
+  stage: 'first',
+  e1: null, pick1: null,
+  start(app) {
+    const s = app.doc.settings;
+    app.prompt(`CHAMFER — Select first line or [Distance] (d1=${fmtLen(s.chamferD1 || 0)}, d2=${fmtLen(s.chamferD2 || 0)}):`);
+  },
+  click(app, pt) {
+    if (this.stage === 'd1' || this.stage === 'd2') return;
+    const e = SEL.hitAt(app, app.pointer.raw);
+    if (!e) { app.print('No object found.'); return; }
+    if (e.type !== 'line') { app.print('Chamfer currently supports lines only.'); return; }
+    if (this.stage === 'first') {
+      this.e1 = e;
+      this.pick1 = { ...app.pointer.raw };
+      this.stage = 'second';
+      app.prompt('Select second line:');
+    } else if (this.stage === 'second') {
+      if (e.id === this.e1.id) { app.print('Select a different line.'); return; }
+      const s = app.doc.settings;
+      if (chamferLines(app, this.e1, this.pick1, e, app.pointer.raw, s.chamferD1 || 0, s.chamferD2 || 0)) app.endTool();
+    }
+  },
+  input(app, raw) {
+    const u = raw.toLowerCase();
+    const s = app.doc.settings;
+    if (this.stage === 'first' && (u === 'd' || u === 'distance')) {
+      this.stage = 'd1';
+      app.prompt(`Specify first chamfer distance <${fmtLen(s.chamferD1 || 0)}>:`);
+      return true;
+    }
+    if (this.stage === 'd1') {
+      if (raw !== '') {
+        const n = parseDist(raw);
+        if (n === null || n < 0) { app.print('Distance must be >= 0.'); return true; }
+        s.chamferD1 = n;
+      }
+      this.stage = 'd2';
+      app.prompt(`Specify second chamfer distance <${fmtLen(s.chamferD2 != null ? s.chamferD2 : (s.chamferD1 || 0))}>:`);
+      return true;
+    }
+    if (this.stage === 'd2') {
+      if (raw !== '') {
+        const n = parseDist(raw);
+        if (n === null || n < 0) { app.print('Distance must be >= 0.'); return true; }
+        s.chamferD2 = n;
+      } else if (s.chamferD2 == null) s.chamferD2 = s.chamferD1 || 0;
+      this.stage = 'first';
+      app.prompt(`Select first line or [Distance] (d1=${fmtLen(s.chamferD1 || 0)}, d2=${fmtLen(s.chamferD2 || 0)}):`);
+      return true;
+    }
+    if (raw === '') { app.endTool(); return true; }
+    return false;
+  },
+});
+
+/* ================= continue / baseline dimensions ================= */
+
+function dimLinePlacement(base, p1, p2, extraOffset) {
+  // place the new dimension on the same dimension line as `base` (offset for baseline)
+  if (base.dtype === 'linear-h') return { x: GEO.mid(p1, p2).x, y: base.p3.y + (extraOffset || 0) };
+  if (base.dtype === 'linear-v') return { x: base.p3.x + (extraOffset || 0), y: GEO.mid(p1, p2).y };
+  // aligned: keep the same perpendicular offset from the measured points
+  const dir = GEO.norm(GEO.sub(base.p2, base.p1));
+  const n = GEO.perp(dir);
+  const off = GEO.dot(GEO.sub(base.p3, base.p1), n) + (extraOffset || 0);
+  return GEO.add(GEO.mid(p1, p2), GEO.mul(n, off));
+}
+
+function makeChainDimTool(name, baseline) {
+  return () => ({
+    name,
+    stage: null,
+    baseDim: null, count: 0,
+    start(app) {
+      const last = app.lastDimId != null ? app.doc.get(app.lastDimId) : null;
+      if (last && ['linear-h', 'linear-v', 'aligned'].includes(last.dtype)) {
+        this.baseDim = last;
+        this.stage = 'next';
+        app.prompt(`${name.toUpperCase()} — Specify next extension line origin (Enter to finish):`);
+      } else {
+        this.stage = 'pickbase';
+        app.prompt(`${name.toUpperCase()} — Select a linear/aligned dimension to continue from:`);
+      }
+    },
+    click(app, pt) {
+      if (this.stage === 'pickbase') {
+        const e = SEL.hitAt(app, app.pointer.raw);
+        if (!e || e.type !== 'dim' || !['linear-h', 'linear-v', 'aligned'].includes(e.dtype)) {
+          app.print('Select a linear or aligned dimension.');
+          return;
+        }
+        this.baseDim = e;
+        this.stage = 'next';
+        app.prompt('Specify next extension line origin (Enter to finish):');
+        return;
+      }
+      if (this.stage === 'next') {
+        const base = this.baseDim;
+        const p1 = baseline ? { ...base.p1 } : { ...base.p2 };
+        if (GEO.eq(p1, pt)) return;
+        this.count++;
+        const gap = baseline ? this._gapSign(base) * ENT.DIM_TEXT * 3.2 * this.count : 0;
+        const dim = makeEntity('dim', {
+          dtype: base.dtype, p1, p2: { ...pt },
+          p3: dimLinePlacement(base, p1, pt, gap),
+          layer: base.layer,
+        });
+        app.doc.checkpoint();
+        app.doc.add(dim);
+        if (!baseline) this.baseDim = dim; // chain continues from the new dim
+        app.lastDimId = dim.id;
+        app.lastPoint = pt;
+      }
+    },
+    _gapSign(base) {
+      // offset further away from the measured geometry
+      if (base.dtype === 'linear-h') return base.p3.y >= Math.max(base.p1.y, base.p2.y) ? 1 : -1;
+      if (base.dtype === 'linear-v') return base.p3.x >= Math.max(base.p1.x, base.p2.x) ? 1 : -1;
+      const n = GEO.perp(GEO.norm(GEO.sub(base.p2, base.p1)));
+      return GEO.dot(GEO.sub(base.p3, base.p1), n) >= 0 ? 1 : -1;
+    },
+    input(app, raw) { if (raw === '') { app.endTool(); return true; } return false; },
+    preview(ctx, app) {
+      if (this.stage !== 'next' || !this.baseDim) return;
+      const base = this.baseDim;
+      const p1 = baseline ? base.p1 : base.p2;
+      const pt = app.pointer.snapped;
+      if (GEO.eq(p1, pt)) return;
+      const gap = baseline ? this._gapSign(base) * ENT.DIM_TEXT * 3.2 * (this.count + 1) : 0;
+      RENDER.previewEntity(ctx, app.vp, {
+        type: 'dim', dtype: base.dtype, p1, p2: pt, p3: dimLinePlacement(base, p1, pt, gap),
+      });
+    },
+  });
+}
+TOOLS.dimcontinue = makeChainDimTool('dimcontinue', false);
+TOOLS.dimbaseline = makeChainDimTool('dimbaseline', true);
+
 /* ================= command registry ================= */
 
 const COMMANDS = {
@@ -1654,6 +2213,7 @@ const COMMANDS = {
   circle: { tool: 'circle', help: 'Draw a circle (center/radius or 2P)' },
   arc: { tool: 'arc', help: 'Draw an arc (3-point or CEnter)' },
   rectang: { tool: 'rectangle', help: 'Draw a rectangle' },
+  ellipse: { tool: 'ellipse', help: 'Draw an ellipse (center, axis, axis)' },
   polygon: { tool: 'polygon', help: 'Draw a regular polygon' },
   point: { tool: 'point', help: 'Place point objects' },
   text: { tool: 'text', help: 'Place single-line text' },
@@ -1665,6 +2225,9 @@ const COMMANDS = {
   dimradius: { tool: 'dimradius', help: 'Radius dimension for circle/arc' },
   dimdiameter: { tool: 'dimdiameter', help: 'Diameter dimension for circle/arc' },
   dimangular: { tool: 'dimangular', help: 'Angular dimension between two lines' },
+  dimcontinue: { tool: 'dimcontinue', help: 'Continue a chain of dimensions from the last one' },
+  dimbaseline: { tool: 'dimbaseline', help: 'Baseline dimensions from a common origin' },
+  leader: { tool: 'leader', help: 'Leader: arrow, segments, then text' },
   dist: { tool: 'dist', help: 'Measure distance between two points' },
   // modify
   move: { tool: 'move', help: 'Move selection' },
@@ -1675,6 +2238,10 @@ const COMMANDS = {
   offset: { tool: 'offset', help: 'Offset line/circle/arc/polyline' },
   trim: { tool: 'trim', help: 'Trim at intersections' },
   extend: { tool: 'extend', help: 'Extend to the nearest boundary edge' },
+  break: { tool: 'break', help: 'Break an object between two points (@ splits at a point)' },
+  join: { tool: 'join', help: 'Join lines/polylines/arcs into one object' },
+  stretch: { tool: 'stretch', help: 'Stretch vertices inside a crossing window' },
+  chamfer: { tool: 'chamfer', help: 'Chamfer two lines (distances or corner)' },
   array: { tool: 'array', help: 'Rectangular or polar array' },
   fillet: { tool: 'fillet', help: 'Fillet two lines (radius or corner)' },
   explode: { tool: 'explode', help: 'Explode polylines/dimensions' },
@@ -1748,6 +2315,8 @@ const ALIASES = {
   ddi: 'dimdiameter', dan: 'dimangular', dimang: 'dimangular', di: 'dist',
   m: 'move', co: 'copy', cp: 'copy', ro: 'rotate', sc: 'scale', mi: 'mirror', o: 'offset',
   tr: 'trim', ex: 'extend', ar: 'array', f: 'fillet', x: 'explode', e: 'erase', del: 'erase', delete: 'erase',
+  el: 'ellipse', le: 'leader', lead: 'leader', br: 'break', j: 'join', s: 'stretch', cha: 'chamfer',
+  dco: 'dimcontinue', dimcont: 'dimcontinue', dba: 'dimbaseline', dimbase: 'dimbaseline',
   h: 'hatch', bh: 'hatch', b: 'block', i: 'insert',
   p: 'pan', z: 'zoom', ze: 'zoom', re: 'regen', u: 'undo', la: 'layer',
   print: 'plot', pdf: 'plot', un: 'units',

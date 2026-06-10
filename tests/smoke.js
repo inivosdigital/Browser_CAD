@@ -165,6 +165,39 @@ const insRot = makeEntity('insert', { name: 'bolt', p: { x: 0, y: 0 }, scale: 1,
 const rkids = ENT.resolvedChildren(insRot);
 check('insert rotation', nearPt(rkids[1].b, { x: 0, y: 2 }));
 
+console.log('p1 batch entities');
+// ellipse
+const ell = makeEntity('ellipse', { c: { x: 10, y: 5 }, rx: 8, ry: 4, rot: 0 });
+check('ellipse pt t=0', nearPt(ENT.ellipsePt(ell, 0), { x: 18, y: 5 }));
+check('ellipse pt t=90', nearPt(ENT.ellipsePt(ell, Math.PI / 2), { x: 10, y: 9 }));
+const ebb = ENT.bbox(ell);
+check('ellipse bbox', near(ebb.x1, 2) && near(ebb.x2, 18) && near(ebb.y1, 1) && near(ebb.y2, 9));
+check('ellipse hit on rim', ENT.hitTest(ell, { x: 18, y: 5 }, 0.3));
+check('ellipse miss center', !ENT.hitTest(ell, { x: 10, y: 5 }, 0.3));
+const rotEll = ENT.transformed(ell, ENT.xfRotate(ell.c, Math.PI / 2));
+check('ellipse rotation', nearPt(ENT.ellipsePt(rotEll, 0), { x: 10, y: 13 }));
+check('ellipse explode -> closed pline', ENT.explode(ell)[0].closed === true);
+const eg = ENT.grips(ell);
+eg[1].apply({ x: 22, y: 5 });
+check('ellipse rx grip', near(ell.rx, 12));
+
+// leader
+const ld = makeEntity('leader', { pts: [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 10 }], text: 'NOTE 1', height: 2.5 });
+const lg = ENT.leaderGeometry(ld);
+check('leader geometry', lg.lines.length === 2 && lg.arrows.length === 1 && lg.texts[0].text === 'NOTE 1');
+check('leader arrow at first pt', nearPt(lg.arrows[0].p, { x: 0, y: 0 }));
+check('leader hit on segment', ENT.hitTest(ld, { x: 5, y: 5 }, 0.3));
+const ldEx = ENT.explode(ld);
+check('leader explodes to lines+text', ldEx.filter(e => e.type === 'line').length === 4 && ldEx.some(e => e.type === 'text'));
+
+// stretch
+const sl = makeEntity('line', { a: { x: 0, y: 0 }, b: { x: 10, y: 0 } });
+ENT.stretch(sl, { x1: 8, y1: -2, x2: 12, y2: 2 }, { x: 5, y: 3 });
+check('stretch moves inside endpoint only', nearPt(sl.a, { x: 0, y: 0 }) && nearPt(sl.b, { x: 15, y: 3 }));
+const sd = makeEntity('dim', { dtype: 'linear-h', p1: { x: 0, y: 0 }, p2: { x: 10, y: 0 }, p3: { x: 5, y: -5 } });
+ENT.stretch(sd, { x1: 8, y1: -2, x2: 12, y2: 2 }, { x: 5, y: 0 });
+check('stretch updates dim defpoint', near(ENT.dimValue(sd), 15));
+
 console.log('pdf');
 const { PDF } = require('../js/pdf.js');
 const pdoc = new (require('../js/document.js').CadDocument)();
