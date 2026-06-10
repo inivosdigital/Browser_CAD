@@ -318,7 +318,7 @@ const RENDER = {
       ctx.setLineDash([]);
     }
 
-    // polar tracking ray + distance<angle readout
+    // polar tracking ray + distance<angle readout (dynamic input)
     if (app.pointer.track) {
       const t = app.pointer.track;
       const b = vp.w2s(t.base);
@@ -332,17 +332,9 @@ const RENDER = {
       ctx.lineTo(b.x + dir.x * far, b.y + dir.y * far);
       ctx.stroke();
       ctx.setLineDash([]);
-      const s = app.pointer.screen;
-      const units = app.doc.settings.units;
-      const distTxt = (typeof UNITS !== 'undefined') ? UNITS.formatLength(t.dist, units, 2) : t.dist.toFixed(2);
-      const angDeg = GEO.normAng(t.ang) * 180 / Math.PI;
-      const label = `${distTxt} < ${(+angDeg.toFixed(2))}°`;
-      ctx.font = '11px Consolas, monospace';
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = 'rgba(20,28,24,0.85)';
-      ctx.fillRect(s.x + 14, s.y - 26, tw + 10, 17);
-      ctx.fillStyle = RENDER.COLORS.snap;
-      ctx.fillText(label, s.x + 19, s.y - 14);
+      RENDER.drawReadout(ctx, app, t.dist, t.ang);
+    } else if (app.pointer.dyn) {
+      RENDER.drawReadout(ctx, app, app.pointer.dyn.dist, app.pointer.dyn.ang);
     }
 
     // snap marker
@@ -362,6 +354,21 @@ const RENDER = {
       ctx.rect(s.x - g + 0.5, s.y - g + 0.5, g * 2, g * 2);
       ctx.stroke();
     }
+  },
+
+  // dynamic-input style distance<angle tooltip at the cursor
+  drawReadout(ctx, app, dist, ang) {
+    const s = app.pointer.screen;
+    const units = app.doc.settings.units;
+    const distTxt = (typeof UNITS !== 'undefined') ? UNITS.formatLength(dist, units, 2) : dist.toFixed(2);
+    const angDeg = GEO.normAng(ang) * 180 / Math.PI;
+    const label = `${distTxt} < ${(+angDeg.toFixed(2))}°`;
+    ctx.font = '11px Consolas, monospace';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(20,28,24,0.85)';
+    ctx.fillRect(s.x + 14, s.y - 26, tw + 10, 17);
+    ctx.fillStyle = RENDER.COLORS.snap;
+    ctx.fillText(label, s.x + 19, s.y - 14);
   },
 
   drawGrips(ctx, vp, e) {

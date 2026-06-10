@@ -46,7 +46,10 @@ from any plain static host — GitHub Pages included.)
   bare length = direct distance toward the cursor
 - **Architectural lengths everywhere** (1 unit = 1"): type `3'6`, `3'-6 1/2"`,
   `18"`, `6 1/2` for any distance, radius, offset, spacing, or coordinate;
-  `UNITS` toggles feet-inches display for dimensions and the coordinate readout
+  dimensions and the coordinate readout display feet-inches (`3'-6"`) **by
+  default** — `UNITS` toggles back to decimal
+- **Dynamic input** (F12): a live `distance<angle` tooltip follows the cursor
+  for every point prompt — dimension distances appear before the second click
 - **Polar tracking** (F10): the cursor locks onto 45° increment rays with a
   dashed tracking line and a live `distance<angle` readout — aim, type `3'6`,
   Enter, exactly like AutoCAD direct distance entry
@@ -81,6 +84,9 @@ from any plain static host — GitHub Pages included.)
 | Bottom | Command history, command line, status toggles (GRID·SNAP·ORTHO·OSNAP) |
 
 Press **F1** in the app for the full command reference.
+
+See [docs/AUTOCAD-LT-PARITY.md](docs/AUTOCAD-LT-PARITY.md) for the AutoCAD LT
+feature inventory, the parity status of every feature, and the MVP roadmap order.
 
 ## Architecture
 

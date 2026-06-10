@@ -201,6 +201,7 @@ const UI = {
     bind('tog-snap', 'snap');
     bind('tog-ortho', 'ortho');
     bind('tog-polar', 'polar');
+    bind('tog-dyn', 'dyn');
     bind('tog-osnap', 'osnap');
   },
 
@@ -211,6 +212,7 @@ const UI = {
     set('tog-snap', s.snapGrid);
     set('tog-ortho', s.ortho);
     set('tog-polar', s.polar);
+    set('tog-dyn', s.dynInput);
     set('tog-osnap', s.osnap);
     document.getElementById('zoom-level').textContent = `${(app.vp.scale * 100 / 4).toFixed(0)}%`;
     document.getElementById('cur-layer').textContent = app.doc.currentLayer;
@@ -485,7 +487,8 @@ const UI = {
       ['Coordinates', '10,20 absolute · @10,20 relative · @15&lt;45 polar · bare length = distance along cursor'],
       ['Lengths', "decimal or feet-inches: 42 · 3'6 · 3'-6 1/2\" · 18\" · 6 1/2 (1 unit = 1\")"],
       ['Polar tracking', 'F10 — locks the cursor to 45° increments with a distance&lt;angle readout'],
-      ['F1', 'Help'], ['F3', 'Object snap'], ['F7', 'Grid'], ['F8', 'Ortho'], ['F9', 'Grid snap'], ['F10', 'Polar tracking'],
+      ['Dynamic input', 'F12 — live distance&lt;angle tooltip at the cursor before the next click'],
+      ['F1', 'Help'], ['F3', 'Object snap'], ['F7', 'Grid'], ['F8', 'Ortho'], ['F9', 'Grid snap'], ['F10', 'Polar tracking'], ['F12', 'Dynamic input'],
       ['Ctrl+Z / Ctrl+Y', 'Undo / Redo'], ['Ctrl+A', 'Select all'], ['Ctrl+S', 'Save'], ['Delete', 'Erase selection'],
     ];
     for (const [k, v] of rows) html += `<tr><td>${k}</td><td colspan="2">${v}</td></tr>`;
