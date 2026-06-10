@@ -294,6 +294,14 @@ const RENDER = {
         ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x - r, s.y + r); ctx.lineTo(s.x + r, s.y + r);
         ctx.moveTo(s.x - r, s.y); ctx.lineTo(s.x, s.y); ctx.lineTo(s.x, s.y + r);
         break;
+      case 'tan': // circle with tangent bar on top
+        ctx.arc(s.x, s.y, r - 1, 0, Math.PI * 2);
+        ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x + r, s.y - r);
+        break;
+      case 'near': // bowtie
+        ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x + r, s.y + r); ctx.lineTo(s.x + r, s.y - r);
+        ctx.lineTo(s.x - r, s.y + r); ctx.closePath();
+        break;
       default:
         ctx.rect(s.x - r, s.y - r, r * 2, r * 2);
     }
