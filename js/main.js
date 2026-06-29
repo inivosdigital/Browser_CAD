@@ -211,6 +211,8 @@ const app = {
   /* ---------- pointer pipeline ---------- */
 
   updatePointer(ev) {
+    if (ev && typeof ev.shiftKey === 'boolean') app.shiftHeld = ev.shiftKey;
+    app._lastClient = { clientX: ev.clientX, clientY: ev.clientY };
     const r = app.canvas.getBoundingClientRect();
     const screen = { x: ev.clientX - r.left, y: ev.clientY - r.top };
     app.pointer.screen = screen;
@@ -255,9 +257,11 @@ const app = {
           }
         }
         if (!tracked) {
-          if (s.ortho && app.anchor) {
+          // holding Shift while drawing toggles ortho momentarily (AutoCAD-style)
+          const orthoActive = (!!s.ortho) !== (!!app.shiftHeld);
+          if (orthoActive && app.anchor) {
             eff = SNAP.ortho(app.anchor, eff);
-          } else if (s.polar && app.anchor) {
+          } else if (s.polar && app.anchor && !app.shiftHeld) {
             // polar tracking: lock to angle increments when the cursor is near a tracking ray
             const d = GEO.sub(app.pointer.raw, app.anchor);
             const dist = GEO.len(d);
@@ -700,7 +704,23 @@ function initApp() {
   cmdInput.focus();
 
   /* ----- global keys ----- */
+  // Shift held during a draw tool = momentary ortho; re-evaluate the
+  // constraint immediately so the preview snaps even without mouse movement
+  const reapplyShift = (held) => {
+    if (app.shiftHeld === held) return;
+    app.shiftHeld = held;
+    if (app._lastClient && app.tool && app.tool.name !== 'select' && app.tool.name !== 'pan') {
+      app.updatePointer({ clientX: app._lastClient.clientX, clientY: app._lastClient.clientY, shiftKey: held });
+      if (app.tool.move) app.tool.move(app, app.pointer.snapped);
+      app.requestRender();
+    }
+  };
+  window.addEventListener('keyup', (ev) => {
+    if (ev.key === 'Shift') reapplyShift(false);
+  });
+  window.addEventListener('blur', () => reapplyShift(false));
   window.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Shift') reapplyShift(true);
     if (ev.target && ev.target.closest && ev.target.closest('#mtext-editor')) return;
     const key = ev.key;
     const mod = ev.ctrlKey || ev.metaKey;
