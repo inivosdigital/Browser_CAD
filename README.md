@@ -68,8 +68,9 @@ from any plain static host — GitHub Pages included.)
 - **Angle override**: type `<30` to lock the next point to an exact bearing
 - **Command autocomplete**: type and Tab/↑↓/Enter through matching commands
 - **Dimension style** (`D`): text height, arrow size, extension lines, precision
-- Ortho mode (F8, mutually exclusive with polar), grid + grid snap (F7/F9),
-  crosshair cursor with pickbox
+- Ortho mode (F8, mutually exclusive with polar) — **hold Shift while drawing
+  to constrain a single point to ortho momentarily** (flips the F8 state);
+  grid + grid snap (F7/F9), crosshair cursor with pickbox
 - Right-click = Enter; Enter on an empty command line repeats the last command
 - Window (drag →, blue) vs crossing (drag ←, green) selection, Shift to deselect
 

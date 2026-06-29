@@ -69,7 +69,7 @@ Priority: **P1** core drafting parity · **P2** strong want · P3 later · — o
 | Object snaps | 14 modes; running + override | ✅ end/mid/center/quad/int/perp/**tan/near** | extension P3 |
 | Polar tracking (F10) + increments | ✅ | ✅ 45° (setting) | P2 increment UI |
 | **Object snap tracking (F11)** | track along osnap alignment paths | ✅ hover-acquire + H/V alignment rays | polar-angle rays P3 |
-| Ortho (F8) | ✅ | ✅ | — |
+| Ortho (F8) | ✅ | ✅ incl. **Shift momentary override** while drawing | — |
 | Grid + snap (F7/F9), polar snap | ✅ | ✅ | — |
 | **Dynamic input (F12, DYNMODE)** — pointer + dimensional tooltips at cursor; distance/angle shown **before the 2nd click**; typed input feeds the active field | ✅ | ✅ distance<angle readout + direct entry | done |
 | Coordinate entry: abs/rel/polar, direct distance | ✅ | ✅ | — |
